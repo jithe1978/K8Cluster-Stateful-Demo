@@ -1,0 +1,9 @@
+name: mern-frontend
+namespace: mern-ns
+replicas: 1
+podLabels:
+  name: mern-app
+  component: frontend-api
+container: 
+  image: jithe1978/k8sampleappfrontendui:2.0
+  port: 80
