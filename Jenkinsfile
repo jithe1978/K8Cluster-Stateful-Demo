@@ -1,5 +1,5 @@
 pipeline {
-  agent { label 'windows' }
+  agent any 
   environment {
     AWS_REGION   = 'us-east-2'
     EKS_CLUSTER  = 'mern-app-cluster'
