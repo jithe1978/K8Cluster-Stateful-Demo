@@ -27,26 +27,23 @@ pipeline {
     }
 
 stage('Login to ECR') {
-    steps {
-        // Debugging DOCKER_HOST before execution
-        powershell 'Write-Host "DOCKER_HOST is set to: $Env:DOCKER_HOST"'
-        powershell 'Test-NetConnection -ComputerName localhost -Port 2375'
+  steps {
+    withAWS(credentials: 'aws-creds', region: "${env.AWS_REGION}") {
+      powershell '''
+        $ErrorActionPreference = "Stop"
+        $acct = (aws sts get-caller-identity --query Account --output text)
+        $registry = "$acct.dkr.ecr.${Env:AWS_REGION}.amazonaws.com"
 
-        withAWS(credentials: 'aws-creds', region: "${env.AWS_REGION}") {
-            powershell '''
-                $loginPassword = aws ecr get-login-password --region $Env:AWS_REGION
-                $registry = "577999460012.dkr.ecr.${Env:AWS_REGION}.amazonaws.com"
-                
-                if ($loginPassword) {
-                    Write-Host "Attempting Docker login to ECR..."
-                    $loginPassword | docker login --username AWS --password-stdin $registry
-                } else {
-                    throw "Failed to retrieve ECR login password from AWS."
-                }
-            '''
-        }
+        $pass = aws ecr get-login-password --region $Env:AWS_REGION
+        if (-not $pass) { throw "Empty ECR login password" }
+
+        docker logout $registry 2>$null | Out-Null
+        docker login $registry -u AWS -p $pass
+      '''
     }
+  }
 }
+
 
     stage('Build Backend Image') {
       steps {
