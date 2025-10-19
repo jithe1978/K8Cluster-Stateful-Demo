@@ -28,12 +28,15 @@ pipeline {
 
 stage('Login to ECR') {
     steps {
+        // Debugging DOCKER_HOST before execution
+        powershell 'Write-Host "DOCKER_HOST is set to: $Env:DOCKER_HOST"'
+        powershell 'Test-NetConnection -ComputerName localhost -Port 2375'
+
         withAWS(credentials: 'aws-creds', region: "${env.AWS_REGION}") {
             powershell '''
                 $loginPassword = aws ecr get-login-password --region $Env:AWS_REGION
                 $registry = "577999460012.dkr.ecr.${Env:AWS_REGION}.amazonaws.com"
                 
-                # Check if $loginPassword is not empty before proceeding (for safety)
                 if ($loginPassword) {
                     Write-Host "Attempting Docker login to ECR..."
                     $loginPassword | docker login --username AWS --password-stdin $registry
