@@ -55,15 +55,15 @@ stage('Login to ECR') {
       }
     }
 
-    stage('Build Frontend Image') {
-      steps {
-        dir('react-client') {
-          powershell '''
-            docker build -t ${Env:ECR_FRONTEND}:${Env:IMAGE_TAG} -t ${Env:ECR_FRONTEND}:latest .
-          '''
-        }
-      }
+stage('Build Frontend Image') {
+  steps {
+    dir('react-client') {
+      powershell '''
+        docker build -f Dockerfile.prod -t ${Env:ECR_FRONTEND}:${Env:IMAGE_TAG} -t ${Env:ECR_FRONTEND}:latest .
+      '''
     }
+  }
+}
 
     stage('Push Images') {
       steps {
