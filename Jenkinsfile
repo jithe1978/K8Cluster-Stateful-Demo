@@ -1,11 +1,12 @@
 pipeline {
-  agent any
+  agent { label 'windows' }
   environment {
     AWS_REGION   = 'us-east-2'
     EKS_CLUSTER  = 'mern-app-cluster'
 
     ECR_BACKEND  = '577999460012.dkr.ecr.us-east-2.amazonaws.com/mern-backend'
     ECR_FRONTEND = '577999460012.dkr.ecr.us-east-2.amazonaws.com/mern-frontend'
+    DOCKER_HOST = 'tcp://localhost:2375'
   }
   options { timestamps() }
 
@@ -25,18 +26,24 @@ pipeline {
       }
     }
 
-    stage('Login to ECR') {
-      steps {
+stage('Login to ECR') {
+    steps {
         withAWS(credentials: 'aws-creds', region: "${env.AWS_REGION}") {
-          powershell '''
-            $acct = (aws sts get-caller-identity --query Account --output text)
-            $loginServer = "$acct.dkr.ecr.${Env:AWS_REGION}.amazonaws.com"
-            aws ecr get-login-password --region $Env:AWS_REGION |
-              docker login --username AWS --password-stdin $loginServer
-          '''
+            powershell '''
+                $loginPassword = aws ecr get-login-password --region $Env:AWS_REGION
+                $registry = "577999460012.dkr.ecr.${Env:AWS_REGION}.amazonaws.com"
+                
+                # Check if $loginPassword is not empty before proceeding (for safety)
+                if ($loginPassword) {
+                    Write-Host "Attempting Docker login to ECR..."
+                    $loginPassword | docker login --username AWS --password-stdin $registry
+                } else {
+                    throw "Failed to retrieve ECR login password from AWS."
+                }
+            '''
         }
-      }
     }
+}
 
     stage('Build Backend Image') {
       steps {
