@@ -18,9 +18,12 @@ spec:
       - name: backendcontainerkubectl
         image: {{.Values.container.image}}
         resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
           limits:
-            memory: "128Mi"
-            cpu: "500m"
+            cpu: "900m"
+            memory: 750Mi
         envFrom:
           - secretRef:
               name: {{.Values.container.secret.name}}
