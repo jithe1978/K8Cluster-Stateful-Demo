@@ -3,13 +3,15 @@ ingress:
   name: ingress-mern-service
   namespace: mern-ns
   ingressClassName: nginx
-  host: ac422a404e18e461995592e1c5e220f6-3c9ff6c977029643.elb.us-east-2.amazonaws.com
+  host: app.mldevops.org
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"   # optional, HTTP→HTTPS
+  tls:
+    enabled: true
+    secretName: app-mern-tls
   rules:
     - path: "/"
-      service:
-        name: frontend-service
-        port: 80
+      service: { name: frontend-service, port: 80 }
     - path: "/api"
-      service:
-        name: backend-service
-        port: 5000
+      service: { name: backend-service, port: 5000 }
