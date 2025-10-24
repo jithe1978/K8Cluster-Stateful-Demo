@@ -1,4 +1,4 @@
-﻿# K8Networking  ---> app.mldevops.org hosted for uploading pdf file and extracting data into excel file and feeding excel sheet to Circuit app for routing shortest route.
+﻿# K8Networking  ---> app.mldevops.org hosted in Route53 and built on AWS EKS, this frontend client reactjs and backend api with Altas Mongo db for testing stateful session in Kubernetes Cluster.
 Below are the steps for Building infrastructure for CI/CD setup.
 
 
@@ -191,3 +191,4 @@ helm -n cert-manager uninstall cert-manager
 kubectl delete ns mern-ns cert-manager ingress-nginx --wait=false
 cd IAC
 terraform destroy
+
