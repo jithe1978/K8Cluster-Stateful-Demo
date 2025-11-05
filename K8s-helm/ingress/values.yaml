@@ -1,17 +1,16 @@
+namespace: mernapp
 ingress:
-  enabled: true
-  name: ingress-mern-service
-  namespace: mern-ns
-  ingressClassName: nginx
-  host: app.mldevops.org
+  name: mern-ing
+  namespace: mernapp
+  ingressClassName: nginx-mern          # IMPORTANT: matches the second controller
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"   # optional, HTTP→HTTPS
   tls:
     enabled: true
-    secretName: app-mern-tls
+    secretName: app-mldevops-org-tls
+  host: app.mldevops.org
   rules:
-    - path: "/"
+    - path: /
       service: { name: frontend-service, port: 80 }
-    - path: "/api"
-      service: { name: backend-service, port: 5000 }
+    - path: /api
+      service: { name: backend-service,  port: 5000 }

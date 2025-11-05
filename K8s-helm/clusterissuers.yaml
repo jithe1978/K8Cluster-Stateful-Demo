@@ -20,7 +20,7 @@ metadata:
   name: letsencrypt-prod
 spec:
   acme:
-    email: you@mldevops.org              # <— change to your email
+    email: jithe1978@gmail.com              # <— change to your email
     server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: acme-account-prod

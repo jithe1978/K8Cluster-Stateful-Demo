@@ -1,13 +1,14 @@
 name: mern-backend
-namespace: mern-ns
+namespace: mernapp
 replicas: 1
-podLabels:
-  name: mern-app
-  component: backend-api
-container: 
-  image: jithe1978/k8s-backend-demo
+container:
+  image: "REPLACED_BY_JENKINS"   # Jenkins overrides to ECR URI:TAG
   port: 5000
-  #MONGOURI: mongodb://$(MONGO_INITDB_ROOT_USERNAME):$(MONGO_INITDB_ROOT_PASSWORD)@mongodb-headless:27017/mukeshdb?authSource=admin
-  MONGOURI: mongodb+srv://jithe1978_db_user:geVE2WLEdhGQ6ZhV@cluster0.jamwn4s.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
   secret:
     name: mongodb-cred
+service:
+  type: ClusterIP
+  port: 5000
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits:   { cpu: 500m, memory: 512Mi }

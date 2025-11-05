@@ -1,0 +1,14 @@
+controller:
+  name: ingress-mern
+  ingressClass: nginx-mern               # distinct class name
+  ingressClassResource:
+    name: nginx-mern
+    enabled: true
+    controllerValue: "k8s.io/ingress-nginx"
+  service:
+    type: NodePort
+    nodePorts:
+      http: 32080
+      https: 32443
+  config:
+    use-forwarded-headers: "true"

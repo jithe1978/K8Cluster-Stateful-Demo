@@ -1,5 +1,3 @@
 apiVersion: v2
-name: my-ingress-chart
-description: A Helm chart for Mern App ingress # added by jithen
-type: application
+name: mern-ingress
 version: 0.1.0

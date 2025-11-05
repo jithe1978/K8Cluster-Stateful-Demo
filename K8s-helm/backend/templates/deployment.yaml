@@ -1,35 +1,36 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{.Values.name}}
-  namespace: {{.Values.namespace}}
+  name: backend
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: mern-backend
 spec:
-  replicas: {{.Values.replicas}}
+  replicas: {{ .Values.replicas }}
   selector:
     matchLabels:
-      app/component: {{.Values.podLabels.component}}
+      app.kubernetes.io/name: mern-backend
   template:
     metadata:
       labels:
-        app/name : {{.Values.podLabels.name}}
-        app/component: {{.Values.podLabels.component}}
+        app.kubernetes.io/name: mern-backend
     spec:
       containers:
-      - name: backendcontainerkubectl
-        image: {{.Values.container.image}}
-        resources:
-          requests:
-            cpu: 250m
-            memory: 256Mi
-          limits:
-            cpu: "900m"
-            memory: 750Mi
-        envFrom:
-          - secretRef:
-              name: {{.Values.container.secret.name}}
-             
-        env:
-          - name: MONGOURI
-            value: {{.Values.container.MONGOURI}}
-        ports:
-        - containerPort: {{.Values.container.port}}
+        - name: backend
+          image: {{ .Values.container.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.container.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.container.secret.name }}
+          readinessProbe:
+            httpGet: { path: /health, port: {{ .Values.container.port }} }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: {{ .Values.container.port }} }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+{{- toYaml .Values.resources | nindent 12 }}

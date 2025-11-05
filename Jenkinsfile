@@ -1,131 +1,122 @@
 pipeline {
-  agent any 
-  environment {
-    AWS_REGION   = 'us-east-2'
-    EKS_CLUSTER  = 'mern-app-cluster'
+  agent any
 
-    ECR_BACKEND  = '577999460012.dkr.ecr.us-east-2.amazonaws.com/mern-backend'
-    ECR_FRONTEND = '577999460012.dkr.ecr.us-east-2.amazonaws.com/mern-frontend'
-    DOCKER_HOST = 'tcp://localhost:2375'
+  environment {
+    AWS_REGION      = 'us-east-2'
+    AWS_ACCOUNT_ID  = '577999460012'
+    ECR_BACKEND     = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-backend"
+    ECR_FRONTEND    = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-frontend"
+    IMAGE_TAG       = "${env.GIT_COMMIT.take(7)}"
+    WORKDIR         = 'K8Networking'
   }
-  options { timestamps() }
+
+  options { disableConcurrentBuilds(); timestamps() }
 
   stages {
-    stage('Checkout') {
-      steps { checkout scm }
-    }
+    stage('Checkout'){ steps { checkout scm } }
 
-    stage('Tag Image') {
+    stage('Init Tooling'){
       steps {
-        script {
-          // Short git SHA; fallback if GIT_COMMIT missing
-          def sha = powershell(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
-          env.IMAGE_TAG = sha ?: "local-${env.BUILD_NUMBER}"
-          echo "IMAGE_TAG=${env.IMAGE_TAG}"
-        }
-      }
-    }
-
-stage('Login to ECR') {
-  steps {
-    withAWS(credentials: 'aws-creds', region: "${env.AWS_REGION}") {
-      powershell '''
-        $ErrorActionPreference = "Stop"
-        $acct = (aws sts get-caller-identity --query Account --output text)
-        $registry = "$acct.dkr.ecr.${Env:AWS_REGION}.amazonaws.com"
-
-        $pass = aws ecr get-login-password --region $Env:AWS_REGION
-        if (-not $pass) { throw "Empty ECR login password" }
-
-        docker logout $registry 2>$null | Out-Null
-        docker login $registry -u AWS -p $pass
-      '''
-    }
-  }
-}
-
-
-    stage('Build Backend Image') {
-      steps {
-        dir('API-jokes') {
+        withCredentials([
+          usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY'),
+          string(credentialsId: 'kubeconfig-content', variable: 'KUBECONFIG_CONTENT')
+        ]) {
           powershell '''
-            docker build -t ${Env:ECR_BACKEND}:${Env:IMAGE_TAG} -t ${Env:ECR_BACKEND}:latest .
+            Set-Content -Path "$env:WORKSPACE\\kubeconfig" -Value $env:KUBECONFIG_CONTENT -Encoding Ascii
+            $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
+            aws --version; kubectl version --client=true; helm version
           '''
         }
       }
     }
 
-stage('Build Frontend Image') {
-  steps {
-    dir('react-client') {
-      powershell '''
-        docker build -f Dockerfile.prod -t ${Env:ECR_FRONTEND}:${Env:IMAGE_TAG} -t ${Env:ECR_FRONTEND}:latest .
-      '''
-    }
-  }
-}
-
-    stage('Push Images') {
+    stage('ECR Login & Repos'){
       steps {
         powershell '''
-          docker push ${Env:ECR_BACKEND}:${Env:IMAGE_TAG}
-          docker push ${Env:ECR_BACKEND}:latest
-          docker push ${Env:ECR_FRONTEND}:${Env:IMAGE_TAG}
-          docker push ${Env:ECR_FRONTEND}:latest
+          aws ecr get-login-password --region $env:AWS_REGION |
+            docker login --username AWS --password-stdin $env:AWS_ACCOUNT_ID.dkr.ecr.$env:AWS_REGION.amazonaws.com
+
+          aws ecr describe-repositories --repository-names mern-backend  --region $env:AWS_REGION 2>$null `
+            || aws ecr create-repository --repository-name mern-backend  --region $env:AWS_REGION | Out-Null
+          aws ecr describe-repositories --repository-names mern-frontend --region $env:AWS_REGION 2>$null `
+            || aws ecr create-repository --repository-name mern-frontend --region $env:AWS_REGION | Out-Null
         '''
       }
     }
 
-    stage('Configure kubectl') {
+    stage('Build & Push Images'){
       steps {
-        withAWS(credentials: 'aws-creds', region: "${env.AWS_REGION}") {
-          powershell '''
-            aws eks update-kubeconfig --name ${Env:EKS_CLUSTER} --region ${Env:AWS_REGION}
-            kubectl get nodes
-            kubectl create namespace mern-ns --dry-run=client -o yaml | kubectl apply -f -
-          '''
-        }
+        powershell '''
+          cd $env:WORKDIR
+          docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest .\\API-jokes
+          docker push  $env:ECR_BACKEND:$env:IMAGE_TAG
+          docker push  $env:ECR_BACKEND:latest
+
+          docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest .\\react-client
+          docker push  $env:ECR_FRONTEND:$env:IMAGE_TAG
+          docker push  $env:ECR_FRONTEND:latest
+        '''
       }
     }
 
-    stage('Deploy Backend (Helm)') {
+    stage('Namespace & Secret check (mernapp)'){
       steps {
-        dir('K8s-helm/backend') {
-          powershell '''
-            helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>$null
-            helm repo update
-            helm upgrade --install backend . -n mern-ns `
-              --set container.image=${Env:ECR_BACKEND}:${Env:IMAGE_TAG} `
-              --set container.port=5000 `
-              --wait --timeout 300s
-          '''
-        }
+        powershell '''
+          $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
+          kubectl get ns mernapp 2>$null; if ($LASTEXITCODE -ne 0) { kubectl create ns mernapp }
+          kubectl -n mernapp get secret mongodb-cred
+        '''
       }
     }
 
-    stage('Deploy Frontend (Helm)') {
+    stage('Deploy Backend (Helm)'){
       steps {
-        dir('K8s-helm/frontend') {
-          powershell '''
-            helm upgrade --install frontend . -n mern-ns `
-              --set container.image=${Env:ECR_FRONTEND}:${Env:IMAGE_TAG} `
-              --set container.port=80 `
-              --wait --timeout 300s
-          '''
-        }
+        powershell '''
+          $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
+          cd $env:WORKDIR
+          helm upgrade --install backend K8s-helm\\backend -n mernapp `
+            --set container.image=$env:ECR_BACKEND:$env:IMAGE_TAG `
+            --set container.port=5000 `
+            --wait --timeout 300s
+          kubectl -n mernapp rollout status deploy/backend --timeout=300s
+        '''
       }
     }
 
-    stage('Check') {
+    stage('Deploy Frontend (Helm)'){
       steps {
-        powershell 'kubectl -n mern-ns get pods,svc,ing'
+        powershell '''
+          $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
+          cd $env:WORKDIR
+          helm upgrade --install frontend K8s-helm\\frontend -n mernapp `
+            --set container.image=$env:ECR_FRONTEND:$env:IMAGE_TAG `
+            --set container.port=80 `
+            --wait --timeout 300s
+          kubectl -n mernapp rollout status deploy/frontend --timeout=300s
+        '''
+      }
+    }
+
+    stage('Deploy Ingress (Helm → nginx-mern)'){
+      steps {
+        powershell '''
+          $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
+          cd $env:WORKDIR
+          helm upgrade --install ingress K8s-helm\\ingress -n mernapp --wait --timeout 300s
+          kubectl -n mernapp get ing
+        '''
+      }
+    }
+
+    stage('Cluster Check'){
+      steps {
+        powershell '''
+          $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
+          kubectl -n mernapp get pods,svc,ing -o wide
+        '''
       }
     }
   }
 
-  post {
-    always {
-      powershell 'docker image prune -f'
-    }
-  }
+  post { always { powershell 'docker image prune -f' } }
 }

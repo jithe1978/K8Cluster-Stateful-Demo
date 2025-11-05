@@ -1,9 +1,13 @@
 name: mern-frontend
-namespace: mern-ns
+namespace: mernapp
 replicas: 1
-podLabels:
-  name: mern-app
-  component: frontend-api
-container: 
-  image: jithe1978/k8sampleappfrontendui:2.0
+container:
+  image: "REPLACED_BY_JENKINS"
   port: 80
+  env: []
+service:
+  type: ClusterIP
+  port: 80
+resources:
+  requests: { cpu: 50m,  memory: 64Mi }
+  limits:   { cpu: 300m, memory: 256Mi }
