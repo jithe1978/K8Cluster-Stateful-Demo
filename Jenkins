@@ -20,48 +20,46 @@ pipeline {
             } 
         }
 
+        // --- FIX 1: Correctly load KUBECONFIG ---
         stage('Init Tooling'){
             steps {
                 withCredentials([
                     file(credentialsId: 'kubeconfig-content-1', variable: 'KUBECONFIG_FILE_PATH')
                 ]) {
-                    // --- NEW SCRIPT BLOCK ---
-                    // This block runs first, using Groovy to set the env var
-                    script {
-                        // The KUBECONFIG_FILE_PATH variable is directly available to Groovy
-                        // We replace single \ with double \\ so it's safe for all
-                        // future PowerShell blocks.
-                        env.KUBECONFIG = KUBECONFIG_FILE_PATH.replace('\\', '\\\\')
-                        echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
-                    }
-                    
-                    // --- UPDATED POWERSHELL BLOCK ---
-                    // This block now *uses* the env var we just set
-                    // We use ''' (triple-single quotes) again because it's simpler
+                    // Use ''' (triple-single quotes)
                     powershell '''
-                        # Use the env var that was just set from Groovy
+                        # These are now treated as pure PowerShell variables
+                        $env:KUBECONFIG = $env:KUBECONFIG_FILE_PATH
                         Write-Host "Kubeconfig set up from secret file: $env:KUBECONFIG"
                         
+                        # Use \\ to find a literal \ and \\\\ to replace with two
+                        $safe_path = $env:KUBECONFIG_FILE_PATH -replace '\\', '\\\\'
+                        "KUBECONFIG=$safe_path" | Out-File -FilePath env.properties -Encoding ascii -Append
+
                         aws --version
                         kubectl version --client=true
                         helm version
 
                         Write-Host "--- Available Kubeconfig Contexts ---"
-                        # This will use the $env:KUBECONFIG set by the script block
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
                     '''
+                    // This 'load' step will now work and set env.KUBECONFIG
+                    load 'env.properties'
+
+                    script {
+                        echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
+                    }
                 }
             }
         }
 
-        // --- UPDATED STAGE ---
         stage('ECR Login & Repos'){
             steps {
                 withCredentials([
                     usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
-                    // Use """ but escape all PS-specific variables with \
+                    // Use """ and escape PS variables with \
                     powershell """
                         \$ErrorActionPreference = "Stop"
                         \$ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
@@ -89,51 +87,48 @@ pipeline {
             }
         }
         
-        // --- UPDATED STAGE ---
+        // --- FIX 2: Use \${} for PowerShell vars with colons ---
         stage('Build & Push Backend') {
             steps {
                 dir('API-jokes') {
-                    // Use """ but escape all PS-specific variables with \
                     powershell """
                         \$ErrorActionPreference = "Stop"
                         \$ECR_BACKEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-backend"
                         
-                        # Use escaped PS variables in the string
-                        Write-Host "Building backend image: \$ECR_BACKEND:${env.IMAGE_TAG}"
-                        docker build -t "\$ECR_BACKEND:${env.IMAGE_TAG}" -t "\$ECR_BACKEND:latest" -f Dockerfile.prod .
+                        # Use \${} to avoid conflict with the colon
+                        Write-Host "Building backend image: \${ECR_BACKEND}:${env.IMAGE_TAG}"
+                        docker build -t "\${ECR_BACKEND}:${env.IMAGE_TAG}" -t "\${ECR_BACKEND}:latest" -f Dockerfile.prod .
                         
                         Write-Host "Pushing backend images..."
-                        docker push "\$ECR_BACKEND:${env.IMAGE_TAG}"
-                        docker push "\$ECR_BACKEND:latest"
+                        docker push "\${ECR_BACKEND}:${env.IMAGE_TAG}"
+                        docker push "\${ECR_BACKEND}:latest"
                     """
                 }
             }
         }
         
-        // --- UPDATED STAGE ---
+        // --- FIX 2: Use \${} for PowerShell vars with colons ---
         stage('Build & Push Frontend') {
             steps {
                 dir('react-client') {
-                    // Use """ but escape all PS-specific variables with \
                     powershell """
                         \$ErrorActionPreference = "Stop"
                         \$ECR_FRONTEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-frontend"
                         
-                        Write-Host "Building frontend image: \$ECR_FRONTEND:${env.IMAGE_TAG}"
-                        docker build -t "\$ECR_FRONTEND:${env.IMAGE_TAG}" -t "\$ECR_FRONTEND:latest" -f Dockerfile.prod .
+                        # Use \${} to avoid conflict with the colon
+                        Write-Host "Building frontend image: \${ECR_FRONTEND}:${env.IMAGE_TAG}"
+                        docker build -t "\${ECR_FRONTEND}:${env.IMAGE_TAG}" -t "\${ECR_FRONTEND}:latest" -f Dockerfile.prod .
                         
                         Write-Host "Pushing frontend images..."
-                        docker push "\$ECR_FRONTEND:${env.IMAGE_TAG}"
-                        docker push "\$ECR_FRONTEND:latest"
+                        docker push "\${ECR_FRONTEND}:${env.IMAGE_TAG}"
+                        docker push "\${ECR_FRONTEND}:latest"
                     """
                 }
             }
         }
 
-        // --- UPDATED STAGE ---
         stage('Namespace & Secret check (mernapp)'){
             steps {
-                // Use """ but escape all PS-specific variables with \
                 powershell """
                     \$ErrorActionPreference = "Stop"
                     \$CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
@@ -154,10 +149,8 @@ pipeline {
             }
         }
 
-        // --- UPDATED STAGE ---
         stage('Deploy Backend (Helm)'){
             steps {
-                // Use """ but escape all PS-specific variables with \
                 powershell """
                     \$ErrorActionPreference = "Stop"
                     \$CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
@@ -166,7 +159,7 @@ pipeline {
                     \$chartPath = "${env.WORKSPACE}\\K8s-helm\\backend"
                     
                     helm upgrade --install backend \$chartPath -n mernapp `
-                        --set container.image="${ECR_BACKEND}:${env.IMAGE_TAG}" `
+                        --set container.image="\${ECR_BACKEND}:${env.IMAGE_TAG}" `
                         --set container.port=5000 `
                         --wait --timeout 300s
                         
@@ -176,10 +169,8 @@ pipeline {
             }
         }
 
-        // --- UPDATED STAGE ---
         stage('Deploy Frontend (Helm)'){
             steps {
-                // Use """ but escape all PS-specific variables with \
                 powershell """
                     \$ErrorActionPreference = "Stop"
                     \$CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
@@ -188,7 +179,7 @@ pipeline {
                     \$chartPath = "${env.WORKSPACE}\\K8s-helm\\frontend"
                     
                     helm upgrade --install frontend \$chartPath -n mernapp `
-                        --set container.image="${ECR_FRONTEND}:${env.IMAGE_TAG}" `
+                        --set container.image="\${ECR_FRONTEND}:${env.IMAGE_TAG}" `
                         --set container.port=80 `
                         --wait --timeout 300s
                         
@@ -198,10 +189,8 @@ pipeline {
             }
         }
 
-        // --- UPDATED STAGE ---
         stage('Deploy Ingress (Helm → nginx-mern)'){
             steps {
-                // Use """ but escape all PS-specific variables with \
                 powershell """
                     \$ErrorActionPreference = "Stop"
                     \$CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
@@ -214,6 +203,4 @@ pipeline {
             }
         }
     }
-    
-    // --- STAGES REMOVED AS REQUESTED ---
 }
