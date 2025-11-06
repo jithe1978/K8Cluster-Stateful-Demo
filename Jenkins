@@ -4,7 +4,6 @@ pipeline {
     environment {
         AWS_REGION     = 'us-east-2'
         AWS_ACCOUNT_ID = '577999460012'
-        // This will be set by the 'Init Tooling' stage
         KUBECONFIG = '' 
     }
 
@@ -21,7 +20,8 @@ pipeline {
             } 
         }
 
-       stage('Init Tooling'){
+        // --- UPDATED STAGE ---
+        stage('Init Tooling'){
             steps {
                 withCredentials([
                     file(credentialsId: 'kubeconfig-content-1', variable: 'KUBECONFIG_FILE_PATH')
@@ -63,16 +63,15 @@ pipeline {
                 withCredentials([
                     usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
-                    // Use """ (triple-double quotes) to allow ${env.AWS_REGION} etc.
+                    // Use """ but escape all PS-specific variables with \
                     powershell """
-                        $ErrorActionPreference = "Stop"
-                        $ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+                        \$ErrorActionPreference = "Stop"
+                        \$ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
                         Write-Host "Verifying AWS identity..."
                         aws sts get-caller-identity
                         
-                        # This line is now fixed
                         Write-Host "Attempting to get ECR login password for region ${env.AWS_REGION}..."
-                        $ecrPassword = aws ecr get-login-password --region ${env.AWS_REGION}
+                        \$ecrPassword = aws ecr get-login-password --region ${env.AWS_REGION}
                         
                         if (-not \$ecrPassword) { 
                             Write-Error "aws ecr get-login-password returned an empty token."
@@ -96,15 +95,18 @@ pipeline {
         stage('Build & Push Backend') {
             steps {
                 dir('API-jokes') {
-                    // Use """ (triple-double quotes)
+                    // Use """ but escape all PS-specific variables with \
                     powershell """
-                        $ErrorActionPreference = "Stop"
-                        $ECR_BACKEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-backend"
-                        Write-Host "Building backend image: ${ECR_BACKEND}:${env.IMAGE_TAG}"
-                        docker build -t "${ECR_BACKEND}:${env.IMAGE_TAG}" -t "${ECR_BACKEND}:latest" -f Dockerfile.prod .
+                        \$ErrorActionPreference = "Stop"
+                        \$ECR_BACKEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-backend"
+                        
+                        # Use escaped PS variables in the string
+                        Write-Host "Building backend image: \$ECR_BACKEND:${env.IMAGE_TAG}"
+                        docker build -t "\$ECR_BACKEND:${env.IMAGE_TAG}" -t "\$ECR_BACKEND:latest" -f Dockerfile.prod .
+                        
                         Write-Host "Pushing backend images..."
-                        docker push "${ECR_BACKEND}:${env.IMAGE_TAG}"
-                        docker push "${ECR_BACKEND}:latest"
+                        docker push "\$ECR_BACKEND:${env.IMAGE_TAG}"
+                        docker push "\$ECR_BACKEND:latest"
                     """
                 }
             }
@@ -114,15 +116,17 @@ pipeline {
         stage('Build & Push Frontend') {
             steps {
                 dir('react-client') {
-                    // Use """ (triple-double quotes)
+                    // Use """ but escape all PS-specific variables with \
                     powershell """
-                        $ErrorActionPreference = "Stop"
-                        $ECR_FRONTEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-frontend"
-                        Write-Host "Building frontend image: ${ECR_FRONTEND}:${env.IMAGE_TAG}"
-                        docker build -t "${ECR_FRONTEND}:${env.IMAGE_TAG}" -t "${ECR_FRONTEND}:latest" -f Dockerfile.prod .
+                        \$ErrorActionPreference = "Stop"
+                        \$ECR_FRONTEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-frontend"
+                        
+                        Write-Host "Building frontend image: \$ECR_FRONTEND:${env.IMAGE_TAG}"
+                        docker build -t "\$ECR_FRONTEND:${env.IMAGE_TAG}" -t "\$ECR_FRONTEND:latest" -f Dockerfile.prod .
+                        
                         Write-Host "Pushing frontend images..."
-                        docker push "${ECR_FRONTEND}:${env.IMAGE_TAG}"
-                        docker push "${ECR_FRONTEND}:latest"
+                        docker push "\$ECR_FRONTEND:${env.IMAGE_TAG}"
+                        docker push "\$ECR_FRONTEND:latest"
                     """
                 }
             }
@@ -131,13 +135,13 @@ pipeline {
         // --- UPDATED STAGE ---
         stage('Namespace & Secret check (mernapp)'){
             steps {
-                // Use """ (triple-double quotes)
+                // Use """ but escape all PS-specific variables with \
                 powershell """
-                    $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
+                    \$ErrorActionPreference = "Stop"
+                    \$CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
                     Write-Host "Checking for namespace 'mernapp' using default context..."
                     
-                    $ns = kubectl get ns mernapp -o name --cache-dir=\$CACHE_PATH 2>\$null
+                    \$ns = kubectl get ns mernapp -o name --cache-dir=\$CACHE_PATH 2>\$null
                     if (-not \$ns) {
                         Write-Host "Namespace mernapp not found, creating..."
                         kubectl create ns mernapp --cache-dir=\$CACHE_PATH
@@ -155,13 +159,13 @@ pipeline {
         // --- UPDATED STAGE ---
         stage('Deploy Backend (Helm)'){
             steps {
-                // Use """ (triple-double quotes)
+                // Use """ but escape all PS-specific variables with \
                 powershell """
-                    $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
-                    $ECR_BACKEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-backend"
+                    \$ErrorActionPreference = "Stop"
+                    \$CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
+                    \$ECR_BACKEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-backend"
                     Write-Host "Deploying backend helm chart using default context..."
-                    $chartPath = "\$env:WORKSPACE\\K8s-helm\\backend"
+                    \$chartPath = "${env.WORKSPACE}\\K8s-helm\\backend"
                     
                     helm upgrade --install backend \$chartPath -n mernapp `
                         --set container.image="${ECR_BACKEND}:${env.IMAGE_TAG}" `
@@ -177,13 +181,13 @@ pipeline {
         // --- UPDATED STAGE ---
         stage('Deploy Frontend (Helm)'){
             steps {
-                // Use """ (triple-double quotes)
+                // Use """ but escape all PS-specific variables with \
                 powershell """
-                    $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
-                    $ECR_FRONTEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-frontend"
+                    \$ErrorActionPreference = "Stop"
+                    \$CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
+                    \$ECR_FRONTEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-frontend"
                     Write-Host "Deploying frontend helm chart using default context..."
-                    $chartPath = "\$env:WORKSPACE\\K8s-helm\\frontend"
+                    \$chartPath = "${env.WORKSPACE}\\K8s-helm\\frontend"
                     
                     helm upgrade --install frontend \$chartPath -n mernapp `
                         --set container.image="${ECR_FRONTEND}:${env.IMAGE_TAG}" `
@@ -199,47 +203,19 @@ pipeline {
         // --- UPDATED STAGE ---
         stage('Deploy Ingress (Helm → nginx-mern)'){
             steps {
-                // Use """ (triple-double quotes)
+                // Use """ but escape all PS-specific variables with \
                 powershell """
-                    $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
+                    \$ErrorActionPreference = "Stop"
+                    \$CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
                     Write-Host "Deploying ingress helm chart using default context..."
-                    $chartPath = "\$env:WORKSPACE\\K8s-helm\\ingress"
+                    \$chartPath = "${env.WORKSPACE}\\K8s-helm\\ingress"
 
                     helm upgrade --install ingress \$chartPath -n mernapp --wait --timeout 300s
                     kubectl -n mernapp get ing --cache-dir=\$CACHE_PATH
                 """
             }
         }
-
-        // --- UPDATED STAGE ---
-        stage('Cluster Check'){
-            steps {
-                // Use """ (triple-double quotes)
-                powershell """
-                    $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
-                    Write-Host "Final cluster check (default context):"
-                    
-                    kubectl -n mernapp get pods,svc,ing -o wide --cache-dir=\$CACHE_PATH
-                """
-            }
-        }
     }
-
-    post { 
-        always { 
-            // Simple commands can use single-quotes
-            powershell 'docker image prune -f'
-            
-            // This will now work because env.KUBECONFIG is set correctly
-            powershell 'Remove-Item -Path $env:KUBECONFIG -ErrorAction SilentlyContinue' 
-            
-            // Use """ to interpolate ${env.WORKSPACE}
-            powershell """
-                Remove-Item -Path "${env.WORKSPACE}\\.kube-cache" -Recurse -Force -ErrorAction SilentlyContinue
-                Remove-Item -Path "${env.WORKSPACE}\\env.properties" -ErrorAction SilentlyContinue
-            """
-        } 
-    }
+    
+    // --- STAGES REMOVED AS REQUESTED ---
 }
