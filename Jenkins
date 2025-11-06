@@ -21,9 +21,7 @@ pipeline {
             } 
         }
 
-        // --- UPDATED STAGE ---
-// --- ONLY CHANGE THIS STAGE ---
-        stage('Init Tooling'){
+       stage('Init Tooling'){
             steps {
                 withCredentials([
                     file(credentialsId: 'kubeconfig-content-1', variable: 'KUBECONFIG_FILE_PATH')
@@ -35,8 +33,8 @@ pipeline {
                         Write-Host "Kubeconfig set up from secret file: $env:KUBECONFIG"
                         
                         # --- THIS IS THE FIX ---
-                        # We must replace single backslashes with double backslashes
-                        # so the 'load' step can read the Windows path correctly.
+                        # Use \\ to find a literal \
+                        # Use \\\\ to replace with two literal \
                         $safe_path = $env:KUBECONFIG_FILE_PATH -replace '\\', '\\\\'
                         "KUBECONFIG=$safe_path" | Out-File -FilePath env.properties -Encoding ascii -Append
                         # --- END OF FIX ---
