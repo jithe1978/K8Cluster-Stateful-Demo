@@ -28,7 +28,7 @@ pipeline {
         withCredentials([
           string(credentialsId: 'kubeconfig-content', variable: 'KUBECONFIG_CONTENT')
         ]) {
-          # Use ''' for plain PowerShell
+   
           powershell '''
             Set-Content -Path "$env:WORKSPACE\\kubeconfig" -Value $env:KUBECONFIG_CONTENT -Encoding Ascii
             $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
@@ -46,7 +46,7 @@ pipeline {
         withCredentials([
           usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
         ]) {
-          # Use """ to let Groovy insert ${env.AWS_REGION} and ${env.ECR_REGISTRY}
+
           powershell """
             $ErrorActionPreference = "Stop"
 
@@ -77,13 +77,13 @@ pipeline {
       }
     }
 
-    # --- SIMPLIFIED BUILD & PUSH STAGES ---
+
     
     stage('Build & Push Backend') {
       steps {
-        # 1. Change to the correct directory
+
         dir('API-jokes') {
-          # 2. Use """ (GString) to let Groovy build the command string
+
           powershell """
             $ErrorActionPreference = "Stop"
             Write-Host "Building backend image: ${env.ECR_BACKEND}:${env.IMAGE_TAG}"
@@ -99,9 +99,9 @@ pipeline {
     
     stage('Build & Push Frontend') {
       steps {
-        # 1. Change to the correct directory
+
         dir('react-client') {
-          # 2. Use """ (GString) to let Groovy build the command string
+
           powershell """
             $ErrorActionPreference = "Stop"
             Write-Host "Building frontend image: ${env.ECR_FRONTEND}:${env.IMAGE_TAG}"
@@ -139,7 +139,7 @@ pipeline {
 
     stage('Deploy Backend (Helm)'){
       steps {
-        # Use """ to let Groovy handle the variables
+
         powershell """
           $ErrorActionPreference = "Stop"
           \$env:KUBECONFIG = "\$env:WORKSPACE\\kubeconfig"
@@ -160,7 +160,7 @@ pipeline {
 
     stage('Deploy Frontend (Helm)'){
       steps {
-        # Use """ to let Groovy handle the variables
+
         powershell """
           $ErrorActionPreference = "Stop"
           $env:KUBECONFIG = "\$env:WORKSPACE\\kubeconfig"
