@@ -73,7 +73,7 @@ pipeline {
           Write-Host "Building backend in $env:WORKSPACE\\API-jokes"
           Set-Location "$env:WORKSPACE\\API-jokes"
           
-          # *** FIX *** # Build path is '.' (current directory), not '.\API-jokes'
+
           docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f Dockerfile.prod .
           docker push $env:ECR_BACKEND:$env:IMAGE_TAG
           docker push $env:ECR_BACKEND:latest
