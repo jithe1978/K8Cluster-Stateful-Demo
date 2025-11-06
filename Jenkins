@@ -223,7 +223,7 @@ pipeline {
     post { 
         always { 
             powershell 'docker image prune -f' 
-            # This 'post' block uses the env.KUBECONFIG variable set in the 'Init' stage
+        
             powershell 'Remove-Item -Path $env:KUBECONFIG -ErrorAction SilentlyContinue' 
         } 
     }
