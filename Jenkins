@@ -20,39 +20,37 @@ pipeline {
             } 
         }
 
-        // --- UPDATED STAGE ---
         stage('Init Tooling'){
             steps {
                 withCredentials([
                     file(credentialsId: 'kubeconfig-content-1', variable: 'KUBECONFIG_FILE_PATH')
                 ]) {
-                    // Use ''' (triple-single quotes)
+                    // --- NEW SCRIPT BLOCK ---
+                    // This block runs first, using Groovy to set the env var
+                    script {
+                        // The KUBECONFIG_FILE_PATH variable is directly available to Groovy
+                        // We replace single \ with double \\ so it's safe for all
+                        // future PowerShell blocks.
+                        env.KUBECONFIG = KUBECONFIG_FILE_PATH.replace('\\', '\\\\')
+                        echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
+                    }
+                    
+                    // --- UPDATED POWERSHELL BLOCK ---
+                    // This block now *uses* the env var we just set
+                    // We use ''' (triple-single quotes) again because it's simpler
                     powershell '''
-                        # These are now treated as pure PowerShell variables
-                        $env:KUBECONFIG = $env:KUBECONFIG_FILE_PATH
+                        # Use the env var that was just set from Groovy
                         Write-Host "Kubeconfig set up from secret file: $env:KUBECONFIG"
                         
-                        # --- THIS IS THE FIX ---
-                        # Use \\ to find a literal \
-                        # Use \\\\ to replace with two literal \
-                        $safe_path = $env:KUBECONFIG_FILE_PATH -replace '\\', '\\\\'
-                        "KUBECONFIG=$safe_path" | Out-File -FilePath env.properties -Encoding ascii -Append
-                        # --- END OF FIX ---
-
                         aws --version
                         kubectl version --client=true
                         helm version
 
                         Write-Host "--- Available Kubeconfig Contexts ---"
+                        # This will use the $env:KUBECONFIG set by the script block
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
                     '''
-                    // This 'load' step will now work
-                    load 'env.properties'
-
-                    script {
-                        echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
-                    }
                 }
             }
         }
