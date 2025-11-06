@@ -49,25 +49,28 @@ stage('ECR Login & Repos'){
             $ErrorActionPreference = "Stop"
 
             Write-Host "Verifying AWS identity..."
-
+            # This command shows which user/role is being used.
             aws sts get-caller-identity
 
-            Write-Host "Attempting to get ECR login password..."
+            Write-Host "Attempting to get ECR login password for region $env:AWS_REGION..."
             $ecrPassword = aws ecr get-login-password --region $env:AWS_REGION
             
             if (-not $ecrPassword) {
-              Write-Error "aws ecr get-login-password returned an empty token. Check IAM permissions."
-
+              Write-Error "aws ecr get-login-password returned an empty token."
+              exit 1 # Fail the build
             }
 
             Write-Host "Password token received, attempting Docker login to $env:ECR_REGISTRY..."
             
-
+            # --- FIX ---
+            # We are breaking the pipe and using --password instead.
+            # This is much more reliable in PowerShell and allows try/catch.
             try {
-              $ecrPassword | docker login --username AWS --password-stdin $env:ECR_REGISTRY
+              docker login --username AWS --password $ecrPassword $env:ECR_REGISTRY
               Write-Host "Docker login successful."
             } catch {
               Write-Error "Docker login FAILED. See error details above."
+              # Exit with a non-zero code to fail the build
               exit 1
             }
             
