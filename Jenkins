@@ -4,9 +4,7 @@ pipeline {
   environment {
     AWS_REGION     = 'us-east-2'
     AWS_ACCOUNT_ID = '577999460012'
-    # --- FIX ---
-    # We define the ECR variables here using Groovy's ${...} syntax
-    # This is safe because it's in the environment block
+ 
     ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
     ECR_BACKEND    = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-backend"
     ECR_FRONTEND   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-frontend"
@@ -165,7 +163,7 @@ pipeline {
         # Use """ to let Groovy handle the variables
         powershell """
           $ErrorActionPreference = "Stop"
-          \$env:KUBECONFIG = "\$env:WORKSPACE\\kubeconfig"
+          $env:KUBECONFIG = "\$env:WORKSPACE\\kubeconfig"
           
           Write-Host "Deploying frontend helm chart..."
           $chartPath = "\$env:WORKSPACE\\K8s-helm\\frontend"
