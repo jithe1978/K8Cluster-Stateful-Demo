@@ -21,37 +21,45 @@ pipeline {
             } 
         }
 
+        // --- UPDATED STAGE ---
+        // This now uses your "Secret file" credential
         stage('Init Tooling'){
             steps {
                 withCredentials([
-                    string(credentialsId: 'kubeconfig-content', variable: 'KUBECONFIG_CONTENT')
+                    // Use 'file' binding and your new ID
+                    file(credentialsId: 'kubeconfig-content-1', variable: 'KUBECONFIG_FILE_PATH')
                 ]) {
                     powershell '''
-                        # Write the ec2.yaml content to a file named kubeconfig
-                        Set-Content -Path "$env:WORKSPACE\\kubeconfig" -Value $env:KUBECONFIG_CONTENT -Encoding Ascii
-                        Write-Host "Kubeconfig set up from 'kubeconfig-content'."
+                        # We don't need 'Set-Content' anymore.
+                        # The KUBECONFIG_FILE_PATH variable *is* the path to the config file.
+                        
+                        # Set the KUBECONFIG variable for *this powershell session*
+                        $env:KUBECONFIG = $env:KUBECONFIG_FILE_PATH
+                        Write-Host "Kubeconfig set up from secret file: $env:KUBECONFIG"
                         
                         aws --version
                         kubectl version --client=true
                         helm version
 
-                        # We can also check the context here
-                        $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
                         Write-Host "--- Available Kubeconfig Contexts ---"
-                        # This command will now pass since you updated the credential
+                        # This should now work perfectly!
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
                     '''
-                    // Set the KUBECONFIG env var for all subsequent stages
+                    // Set the KUBECONFIG env var for *all subsequent stages*
                     script {
-                        env.KUBECONFIG = "$env.WORKSPACE\\kubeconfig"
+                        // In Groovy, the variable is just its name
+                        env.KUBECONFIG = KUBECONFIG_FILE_PATH
+                        echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
                     }
                 }
             }
         }
 
+        // --- ALL OTHER STAGES REMAIN THE SAME ---
+        // (No context flags are needed, as you confirmed)
+
         stage('ECR Login & Repos'){
-            // (No changes needed in this stage)
             steps {
                 withCredentials([
                     usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
@@ -82,7 +90,6 @@ pipeline {
         }
         
         stage('Build & Push Backend') {
-             // (No changes needed in this stage)
             steps {
                 dir('API-jokes') {
                     powershell '''
@@ -99,7 +106,6 @@ pipeline {
         }
         
         stage('Build & Push Frontend') {
-            // (No changes needed in this stage)
             steps {
                 dir('react-client') {
                     powershell '''
@@ -115,8 +121,6 @@ pipeline {
             }
         }
 
-        // --- SIMPLIFIED STAGE ---
-        // Removed all --context ec2 flags
         stage('Namespace & Secret check (mernapp)'){
             steps {
                 powershell '''
@@ -138,8 +142,6 @@ pipeline {
             }
         }
 
-        // --- SIMPLIFIED STAGE ---
-        // Removed all --kube-context and --context flags
         stage('Deploy Backend (Helm)'){
             steps {
                 powershell '''
@@ -159,8 +161,6 @@ pipeline {
             }
         }
 
-        // --- SIMPLIFIED STAGE ---
-        // Removed all --kube-context and --context flags
         stage('Deploy Frontend (Helm)'){
             steps {
                 powershell '''
@@ -180,8 +180,6 @@ pipeline {
             }
         }
 
-        // --- SIMPLIFIED STAGE ---
-        // Removed all --kube-context and --context flags
         stage('Deploy Ingress (Helm → nginx-mern)'){
             steps {
                 powershell '''
@@ -195,8 +193,6 @@ pipeline {
             }
         }
 
-        // --- SIMPLIFIED STAGE ---
-        // Removed all --context flags
         stage('Cluster Check'){
             steps {
                 powershell '''
@@ -212,6 +208,8 @@ pipeline {
     post { 
         always { 
             powershell 'docker image prune -f' 
+            # This is fine. Jenkins *should* clean up the secret file,
+            # but this won't hurt.
             powershell 'Remove-Item -Path $env:KUBECONFIG -ErrorAction SilentlyContinue' 
         } 
     }
