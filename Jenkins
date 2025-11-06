@@ -118,7 +118,7 @@ pipeline {
       steps {
         powershell '''
           $ErrorActionPreference = "Stop"
-          $env:KUBECONFIG = $HOME\.kube\ec2.yaml
+          $env:KUBECONFIG = "$HOME\.kube\ec2.yaml"
           
           Write-Host "Checking for namespace mernapp..."
           $ns = kubectl get --context ec2 ns mernapp -o name 2>$null
