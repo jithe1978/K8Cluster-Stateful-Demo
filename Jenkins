@@ -82,7 +82,7 @@ pipeline {
           Set-Location "$env:WORKSPACE\\react-client"
 
           # *** FIX ***
-          # Build path is '.' (current directory), not '.\react-client'
+          # Build path is '.' (current directory), not react-client
           docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f Dockerfile.prod .
           docker push $env:ECR_FRONTEND:$env:IMAGE_TAG
           docker push $env:ECR_FRONTEND:latest
@@ -96,7 +96,7 @@ pipeline {
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           kubectl get ns mernapp 2>$null; if ($LASTEXITCODE -ne 0) { kubectl create ns mernapp }
           
-          # This command will fail if the secret doesn't exist. 
+          # This command will fail if the secret doesnt exist. 
           # You may need to create it manually or add it to your Helm chart.
           kubectl -n mernapp get secret mongodb-cred
         '''
@@ -167,8 +167,6 @@ pipeline {
     always { 
       powershell 'docker image prune -f' 
       
-      // Groovy comments use '//', not '#'
-      // Clean up the kubeconfig file from the workspace
       powershell 'Remove-Item -Path "$env:WORKSPACE\\kubeconfig" -ErrorAction SilentlyContinue' 
     } 
   }
