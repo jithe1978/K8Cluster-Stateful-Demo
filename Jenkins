@@ -22,18 +22,24 @@ pipeline {
         }
 
         // --- UPDATED STAGE ---
-stage('Init Tooling'){
+// --- ONLY CHANGE THIS STAGE ---
+        stage('Init Tooling'){
             steps {
                 withCredentials([
                     file(credentialsId: 'kubeconfig-content-1', variable: 'KUBECONFIG_FILE_PATH')
                 ]) {
-                    // --- CHANGE: Use triple-single-quotes ''' ---
+                    // Use ''' (triple-single quotes)
                     powershell '''
                         # These are now treated as pure PowerShell variables
                         $env:KUBECONFIG = $env:KUBECONFIG_FILE_PATH
                         Write-Host "Kubeconfig set up from secret file: $env:KUBECONFIG"
                         
-                        "KUBECONFIG=$env:KUBECONFIG_FILE_PATH" | Out-File -FilePath env.properties -Encoding ascii -Append
+                        # --- THIS IS THE FIX ---
+                        # We must replace single backslashes with double backslashes
+                        # so the 'load' step can read the Windows path correctly.
+                        $safe_path = $env:KUBECONFIG_FILE_PATH -replace '\\', '\\\\'
+                        "KUBECONFIG=$safe_path" | Out-File -FilePath env.properties -Encoding ascii -Append
+                        # --- END OF FIX ---
 
                         aws --version
                         kubectl version --client=true
@@ -43,10 +49,9 @@ stage('Init Tooling'){
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
                     '''
-                    // --- END CHANGE ---
-
-                    // This part is unchanged
+                    // This 'load' step will now work
                     load 'env.properties'
+
                     script {
                         echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
                     }
