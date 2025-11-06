@@ -168,10 +168,9 @@ pipeline {
 
   post { 
     always { 
-      powershell 'docker image prune -f' 
-      
-      # Clean up the kubeconfig file from the workspace
-      powershell 'Remove-Item -Path "$env:WORKSPACE\\kubeconfig" -ErrorAction SilentlyContinue' 
+      powershell '''docker image prune -f''' 
+
+      powershell 'Remove-Item -Path "$env:WORKSPACE\\kubeconfig" -ErrorAction SilentlyContinue'
     } 
   }
 }
