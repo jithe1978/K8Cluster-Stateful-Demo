@@ -11,7 +11,7 @@ pipeline {
 
   options { disableConcurrentBuilds(); timestamps() }
 
-  stages {
+stages {
     stage('Checkout'){ 
       steps { 
         checkout scm 
@@ -39,17 +39,19 @@ pipeline {
       }
     }
 
-stage('ECR Login & Repos'){
+    stage('ECR Login & Repos'){
       steps {
         withCredentials([
           usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
         ]) {
           powershell '''
-            
             $ErrorActionPreference = "Stop"
 
+            # --- FIX ---
+            # Define ECR_REGISTRY *inside* the script
+            $ECR_REGISTRY = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com"
+
             Write-Host "Verifying AWS identity..."
-            # This command shows which user/role is being used.
             aws sts get-caller-identity
 
             Write-Host "Attempting to get ECR login password for region $env:AWS_REGION..."
@@ -60,18 +62,15 @@ stage('ECR Login & Repos'){
               exit 1 # Fail the build
             }
 
-            Write-Host "Password token received, attempting Docker login to $env:ECR_REGISTRY..."
+            Write-Host "Password token received, attempting Docker login to $ECR_REGISTRY..."
             
-            # --- FIX ---
-            # We are breaking the pipe and using --password instead.
-            # This is much more reliable in PowerShell and allows try/catch.
             try {
-              docker login --username AWS --password $ecrPassword $env:ECR_REGISTRY
+              # Use --password $ecrPassword, which is more reliable than piping
+              docker login --username AWS --password $ecrPassword $ECR_REGISTRY
               Write-Host "Docker login successful."
             } catch {
               Write-Error "Docker login FAILED. See error details above."
-              # Exit with a non-zero code to fail the build
-              exit 1
+              exit 1 # Exit with a non-zero code to fail the build
             }
             
             Write-Host "ECR repos mern-backend and mern-frontend are assumed to exist."
@@ -87,34 +86,35 @@ stage('ECR Login & Repos'){
         ]) {
           powershell '''
             $ErrorActionPreference = "Stop"
+            
             # --- FIX ---
             # Define ECR_BACKEND and ECR_FRONTEND *inside* the script
             $ECR_BACKEND  = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
             $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
 
-            # --- FIX ---
             # We are now passing the *full explicit path* to the Dockerfile
             # and the *full explicit path* for the build context.
             
             Write-Host "Building backend in $env:WORKSPACE\\API-jokes"
-            docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f "$env:WORKSPACE\\API-jokes\\Dockerfile.prod" "$env:WORKSPACE\\API-jokes"
+            docker build -t "$ECR_BACKEND:${env:IMAGE_TAG}" -t "$ECR_BACKEND:latest" -f "$env:WORKSPACE\\API-jokes\\Dockerfile.prod" "$env:WORKSPACE\\API-jokes"
             
             Write-Host "Pushing backend to ECR..."
-            docker push $env:ECR_BACKEND:$env:IMAGE_TAG
-            docker push $env:ECR_BACKEND:latest
+            docker push "$ECR_BACKEND:${env:IMAGE_TAG}"
+            docker push "$ECR_BACKEND:latest"
 
             Write-Host "Building frontend in $env:WORKSPACE\\react-client"
-            docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f "$env:WORKSPACE\\react-client\\Dockerfile.prod" "$env:WORKSPACE\\react-client"
+            docker build -t "$ECR_FRONTEND:${env:IMAGE_TAG}" -t "$ECR_FRONTEND:latest" -f "$env:WORKSPACE\\react-client\\Dockerfile.prod" "$env:WORKSPACE\\react-client"
             
             Write-Host "Pushing frontend to ECR..."
-            docker push $env:ECR_FRONTEND:$env:IMAGE_TAG
-            docker push $env:ECR_FRONTEND:latest
+            docker push "$ECR_FRONTEND:${env:IMAGE_TAG}"
+            docker push "$ECR_FRONTEND:latest"
             
             Write-Host "Build & Push complete."
           '''
         }
       }
     }
+
     stage('Namespace & Secret check (mernapp)'){
       steps {
         powershell '''
@@ -122,14 +122,20 @@ stage('ECR Login & Repos'){
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           
           Write-Host "Checking for namespace mernapp..."
-          kubectl get ns mernapp 2>$null; if ($LASTEXITCODE -ne 0) { 
+          # Use -ErrorAction SilentlyContinue to suppress "Not Found" error
+          $ns = kubectl get ns mernapp -o name 2>$null
+          if (-not $ns) {
             Write-Host "Namespace mernapp not found, creating..."
             kubectl create ns mernapp 
+          } else {
+            Write-Host "Namespace mernapp already exists."
           }
           
           Write-Host "Checking for secret mongodb-cred..."
+          # This command will fail if the secret doesn't exist. 
+          # You must create it manually or add it to your Helm chart.
           kubectl -n mernapp get secret mongodb-cred
-          Write-Host "Secret mongodb-cred found."
+          Write-Host "Secret 'mongodb-cred' found."
         '''
       }
     }
@@ -140,11 +146,16 @@ stage('ECR Login & Repos'){
           $ErrorActionPreference = "Stop"
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           
+          # --- FIX ---
+          # Define ECR_BACKEND *inside* the script
+          $ECR_BACKEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
+
           Write-Host "Deploying backend helm chart..."
-          Set-Location "$env:WORKSPACE\\K8s-helm\\backend"
+          # Pass the full chart path to helm, which is more reliable
+          $chartPath = "$env:WORKSPACE\\K8s-helm\\backend"
           
-          helm upgrade --install backend . -n mernapp `
-            --set container.image=$env:ECR_BACKEND:$env:IMAGE_TAG `
+          helm upgrade --install backend $chartPath -n mernapp `
+            --set container.image="$ECR_BACKEND:${env:IMAGE_TAG}" `
             --set container.port=5000 `
             --wait --timeout 300s
             
@@ -160,11 +171,15 @@ stage('ECR Login & Repos'){
           $ErrorActionPreference = "Stop"
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           
-          Write-Host "Deploying frontend helm chart..."
-          Set-Location "$env:WORKSPACE\\K8s-helm\\frontend"
+          # --- FIX ---
+          # Define ECR_FRONTEND *inside* the script
+          $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
           
-          helm upgrade --install frontend . -n mernapp `
-            --set container.image=$env:ECR_FRONTEND:$env:IMAGE_TAG `
+          Write-Host "Deploying frontend helm chart..."
+          $chartPath = "$env:WORKSPACE\\K8s-helm\\frontend"
+          
+          helm upgrade --install frontend $chartPath -n mernapp `
+            --set container.image="$ECR_FRONTEND:${env:IMAGE_TAG}" `
             --set container.port=80 `
             --wait --timeout 300s
             
@@ -181,9 +196,9 @@ stage('ECR Login & Repos'){
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           
           Write-Host "Deploying ingress helm chart..."
-          Set-Location "$env:WORKSPACE\\K8s-helm\\ingress"
+          $chartPath = "$env:WORKSPACE\\K8s-helm\\ingress"
 
-          helm upgrade --install ingress . -n mernapp --wait --timeout 300s
+          helm upgrade --install ingress $chartPath -n mernapp --wait --timeout 300s
           kubectl -n mernapp get ing
         '''
       }
@@ -192,7 +207,10 @@ stage('ECR Login & Repos'){
     stage('Cluster Check'){
       steps {
         powershell '''
+          $ErrorActionPreference = "Stop"
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
+          
+          Write-Host "Final cluster check:"
           kubectl -n mernapp get pods,svc,ing -o wide
         '''
       }
