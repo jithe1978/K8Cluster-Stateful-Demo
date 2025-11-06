@@ -124,16 +124,16 @@ pipeline {
                     Write-Host "Checking for namespace mernapp using context ec2..."
                     
                     # --context ec2 is correct
-                    $ns = kubectl get --context ec2 ns mernapp -o name 2>$null
+                    $ns = kubectl get ns mernapp -o name 2>$null
                     if (-not $ns) {
                         Write-Host "Namespace mernapp not found, creating..."
-                        kubectl create --context ec2 ns mernapp
+                        kubectl create ns mernapp
                     } else {
                         Write-Host "Namespace mernapp already exists."
                     }
                     
                     Write-Host "Checking for secret mongodb-cred using context ec2..."
-                    kubectl -n mernapp get secret mongodb-cred --context ec2
+                    kubectl -n mernapp get secret mongodb-cred
                     Write-Host "Secret mongodb-cred found."
                 '''
             }
@@ -149,13 +149,12 @@ pipeline {
                     
                     # --kube-context ec2 is correct
                     helm upgrade --install backend $chartPath -n mernapp `
-                        --kube-context ec2 `
                         --set container.image="${ECR_BACKEND}:${env:IMAGE_TAG}" `
                         --set container.port=5000 `
                         --wait --timeout 300s
                         
                     Write-Host "Waiting for backend rollout..."
-                    kubectl -n mernapp rollout status deploy/mern-backend --context ec2 --timeout=300s
+                    kubectl -n mernapp rollout status deploy/mern-backend --timeout=300s
                 '''
             }
         }
@@ -170,13 +169,12 @@ pipeline {
                     
                     # --kube-context ec2 is correct
                     helm upgrade --install frontend $chartPath -n mernapp `
-                        --kube-context ec2 `
                         --set container.image="${ECR_FRONTEND}:${env:IMAGE_TAG}" `
                         --set container.port=80 `
                         --wait --timeout 300s
                         
                     Write-Host "Waiting for frontend rollout..."
-                    kubectl -n mernapp rollout status deploy/frontend --context ec2 --timeout=300s
+                    kubectl -n mernapp rollout status deploy/frontend --timeout=300s
                 '''
             }
         }
@@ -189,8 +187,8 @@ pipeline {
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\ingress"
 
                     # --kube-context ec2 is correct
-                    helm upgrade --install ingress $chartPath -n mernapp --kube-context ec2 --wait --timeout 300s
-                    kubectl -n mernapp get ing --context ec2
+                    helm upgrade --install ingress $chartPath -n mernapp --wait --timeout 300s
+                    kubectl -n mernapp get ing
                 '''
             }
         }
@@ -202,7 +200,7 @@ pipeline {
                     Write-Host "Final cluster check (context ec2):"
                     
                     # --context ec2 is correct
-                    kubectl -n mernapp get pods,svc,ing -o wide --context ec2
+                    kubectl -n mernapp get pods,svc,ing -o wide
                 '''
             }
         }
