@@ -45,12 +45,15 @@ pipeline {
     stage('Build & Push Images'){
       steps {
         powershell '''
-          cd $env:WORKDIR
-          docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest .\\API-jokes
+          Write-Host "Building backend in $env:WORKSPACE\\API-jokes"
+          Set-Location "$env:WORKSPACE\\API-jokes"
+          docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f Dockerfile.prod .\\API-jokes
           docker push  $env:ECR_BACKEND:$env:IMAGE_TAG
           docker push  $env:ECR_BACKEND:latest
-
-          docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest .\\react-client
+          # 3. Change to the frontend directory
+          Write-Host "Building frontend in $env:WORKSPACE\\react-client"
+          Set-Location "$env:WORKSPACE\\react-client"
+          docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f Dockerfile.prod .\\react-client
           docker push  $env:ECR_FRONTEND:$env:IMAGE_TAG
           docker push  $env:ECR_FRONTEND:latest
         '''
