@@ -87,7 +87,11 @@ stage('ECR Login & Repos'){
         ]) {
           powershell '''
             $ErrorActionPreference = "Stop"
-            
+            # --- FIX ---
+            # Define ECR_BACKEND and ECR_FRONTEND *inside* the script
+            $ECR_BACKEND  = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
+            $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
+
             # --- FIX ---
             # We are now passing the *full explicit path* to the Dockerfile
             # and the *full explicit path* for the build context.
