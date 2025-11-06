@@ -20,19 +20,15 @@ pipeline {
             } 
         }
 
-        // --- FIX 1: Correctly load KUBECONFIG ---
         stage('Init Tooling'){
             steps {
                 withCredentials([
                     file(credentialsId: 'kubeconfig-content-1', variable: 'KUBECONFIG_FILE_PATH')
                 ]) {
-                    // Use ''' (triple-single quotes)
                     powershell '''
-                        # These are now treated as pure PowerShell variables
                         $env:KUBECONFIG = $env:KUBECONFIG_FILE_PATH
                         Write-Host "Kubeconfig set up from secret file: $env:KUBECONFIG"
                         
-                        # Use \\ to find a literal \ and \\\\ to replace with two
                         $safe_path = $env:KUBECONFIG_FILE_PATH -replace '\\', '\\\\'
                         "KUBECONFIG=$safe_path" | Out-File -FilePath env.properties -Encoding ascii -Append
 
@@ -44,9 +40,7 @@ pipeline {
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
                     '''
-                    // This 'load' step will now work and set env.KUBECONFIG
                     load 'env.properties'
-
                     script {
                         echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
                     }
@@ -59,7 +53,6 @@ pipeline {
                 withCredentials([
                     usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
-                    // Use """ and escape PS variables with \
                     powershell """
                         \$ErrorActionPreference = "Stop"
                         \$ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
@@ -87,7 +80,6 @@ pipeline {
             }
         }
         
-        // --- FIX 2: Use \${} for PowerShell vars with colons ---
         stage('Build & Push Backend') {
             steps {
                 dir('API-jokes') {
@@ -95,7 +87,6 @@ pipeline {
                         \$ErrorActionPreference = "Stop"
                         \$ECR_BACKEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-backend"
                         
-                        # Use \${} to avoid conflict with the colon
                         Write-Host "Building backend image: \${ECR_BACKEND}:${env.IMAGE_TAG}"
                         docker build -t "\${ECR_BACKEND}:${env.IMAGE_TAG}" -t "\${ECR_BACKEND}:latest" -f Dockerfile.prod .
                         
@@ -107,7 +98,6 @@ pipeline {
             }
         }
         
-        // --- FIX 2: Use \${} for PowerShell vars with colons ---
         stage('Build & Push Frontend') {
             steps {
                 dir('react-client') {
@@ -115,7 +105,6 @@ pipeline {
                         \$ErrorActionPreference = "Stop"
                         \$ECR_FRONTEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-frontend"
                         
-                        # Use \${} to avoid conflict with the colon
                         Write-Host "Building frontend image: \${ECR_FRONTEND}:${env.IMAGE_TAG}"
                         docker build -t "\${ECR_FRONTEND}:${env.IMAGE_TAG}" -t "\${ECR_FRONTEND}:latest" -f Dockerfile.prod .
                         
