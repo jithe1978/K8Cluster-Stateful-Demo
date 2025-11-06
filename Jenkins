@@ -55,8 +55,8 @@ pipeline {
             aws sts get-caller-identity
 
             Write-Host "Attempting to get ECR login password for region ${env.AWS_REGION}..."
-            // Use \$ to escape $ for PowerShell
-            \$ecrPassword = aws ecr get-login-password --region ${env.AWS_REGION}
+            // Use  to escape  for PowerShell
+            $ecrPassword = aws ecr get-login-password --region ${env.AWS_REGION}
             
             if (-not \$ecrPassword) { 
               Write-Error "aws ecr get-login-password returned an empty token."
