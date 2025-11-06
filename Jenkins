@@ -116,7 +116,7 @@ pipeline {
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
+                    $CACHE_PATH = "$env:WORKSPACE\\.kube-cache"
                     Write-Host "Checking for namespace mernapp using default context..."
                     
                     $ns = kubectl get ns mernapp -o name --cache-dir=$CACHE_PATH 2>$null
@@ -140,7 +140,7 @@ pipeline {
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
+                    $CACHE_PATH = "$env:WORKSPACE\\.kube-cache"
                     $ECR_BACKEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
                     Write-Host "Deploying backend helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\backend"
@@ -162,7 +162,7 @@ pipeline {
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
+                    $CACHE_PATH = "$env:WORKSPACE\\.kube-cache"
                     $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
                     Write-Host "Deploying frontend helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\frontend"
@@ -184,7 +184,7 @@ pipeline {
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
+                    $CACHE_PATH = "$env:WORKSPACE\\.kube-cache"
                     Write-Host "Deploying ingress helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\ingress"
 
@@ -200,7 +200,7 @@ pipeline {
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
+                    $CACHE_PATH = "$env:WORKSPACE\\.kube-cache"
                     Write-Host "Final cluster check (default context):"
                     
                     kubectl -n mernapp get pods,svc,ing -o wide --cache-dir=$CACHE_PATH
@@ -214,7 +214,7 @@ pipeline {
             powershell 'docker image prune -f' 
             powershell 'Remove-Item -Path $env:KUBECONFIG -ErrorAction SilentlyContinue' 
            
-            powershell 'Remove-Item -Path "$env:WORKSPACE\.kube-cache" -Recurse -Force -ErrorAction SilentlyContinue'
+            powershell 'Remove-Item -Path "$env:WORKSPACE\\.kube-cache" -Recurse -Force -ErrorAction SilentlyContinue'
         } 
     }
 }
