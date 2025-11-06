@@ -31,9 +31,9 @@ pipeline {
                 ]) {
                     powershell '''
                         # We don't need 'Set-Content' anymore.
-                        # The KUBECONFIG_FILE_PATH variable *is* the path to the config file.
                         
-                        # Set the KUBECONFIG variable for *this powershell session*
+                        
+                  
                         $env:KUBECONFIG = $env:KUBECONFIG_FILE_PATH
                         Write-Host "Kubeconfig set up from secret file: $env:KUBECONFIG"
                         
@@ -42,7 +42,7 @@ pipeline {
                         helm version
 
                         Write-Host "--- Available Kubeconfig Contexts ---"
-                        # This should now work perfectly!
+                    
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
                     '''
@@ -208,8 +208,7 @@ pipeline {
     post { 
         always { 
             powershell 'docker image prune -f' 
-            # This is fine. Jenkins *should* clean up the secret file,
-            # but this won't hurt.
+
             powershell 'Remove-Item -Path $env:KUBECONFIG -ErrorAction SilentlyContinue' 
         } 
     }
