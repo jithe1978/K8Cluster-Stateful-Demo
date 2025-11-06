@@ -60,7 +60,7 @@ pipeline {
             Write-Host "Password token received, attempting Docker login to $ECR_REGISTRY..."
             
             try {
-              docker login --username AWS --password \$ecrPassword $ECR_REGISTRY
+              docker login --username AWS --password $ecrPassword $ECR_REGISTRY
               Write-Host "Docker login successful."
             } catch {
               Write-Error "Docker login FAILED. See error details above."
