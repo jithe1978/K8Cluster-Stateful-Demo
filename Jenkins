@@ -118,20 +118,20 @@ pipeline {
       steps {
         powershell '''
           $ErrorActionPreference = "Stop"
-          $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
+          $env:KUBECONFIG = $HOME\.kube\ec2.yaml
           
-          Write-Host "Checking for namespace 'mernapp'..."
-          $ns = kubectl get ns mernapp -o name 2>$null
+          Write-Host "Checking for namespace mernapp..."
+          $ns = kubectl get --context ec2 ns mernapp -o name 2>$null
           if (-not $ns) {
-            Write-Host "Namespace 'mernapp' not found, creating..."
-            kubectl create ns mernapp 
+            Write-Host "Namespace mernapp not found, creating..."
+            kubectl create ns mernapp --context ec2
           } else {
-            Write-Host "Namespace 'mernapp' already exists."
+            Write-Host "Namespace mernapp already exists."
           }
           
-          Write-Host "Checking for secret 'mongodb-cred'..."
-          kubectl -n mernapp get secret mongodb-cred
-          Write-Host "Secret 'mongodb-cred' found."
+          Write-Host "Checking for secret mongodb-cred..."
+          kubectl -n mernapp get secret mongodb-cred --context ec2
+          Write-Host "Secret mongodb-cred found."
         '''
       }
     }
