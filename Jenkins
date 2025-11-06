@@ -5,8 +5,11 @@ pipeline {
     AWS_REGION     = 'us-east-2'
     AWS_ACCOUNT_ID = '577999460012'
     # --- FIX ---
-    # The ECR variables have been REMOVED from this block
-    # They will be defined inside the stages where they are needed
+    # We define the ECR variables here using Groovy's ${...} syntax
+    # This is safe because it's in the environment block
+    ECR_REGISTRY   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+    ECR_BACKEND    = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-backend"
+    ECR_FRONTEND   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-frontend"
   }
 
   options { disableConcurrentBuilds(); timestamps() }
@@ -27,6 +30,7 @@ pipeline {
         withCredentials([
           string(credentialsId: 'kubeconfig-content', variable: 'KUBECONFIG_CONTENT')
         ]) {
+          # Use ''' for plain PowerShell
           powershell '''
             Set-Content -Path "$env:WORKSPACE\\kubeconfig" -Value $env:KUBECONFIG_CONTENT -Encoding Ascii
             $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
@@ -44,29 +48,25 @@ pipeline {
         withCredentials([
           usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
         ]) {
-          powershell '''
+          # Use """ to let Groovy insert ${env.AWS_REGION} and ${env.ECR_REGISTRY}
+          powershell """
             $ErrorActionPreference = "Stop"
-
-            # --- FIX ---
-            # Define ECR_REGISTRY *inside* the script
-            $ECR_REGISTRY = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com"
 
             Write-Host "Verifying AWS identity..."
             aws sts get-caller-identity
 
-            Write-Host "Attempting to get ECR login password for region $env:AWS_REGION..."
-            $ecrPassword = aws ecr get-login-password --region $env:AWS_REGION
+            Write-Host "Attempting to get ECR login password for region ${env.AWS_REGION}..."
+            $ecrPassword = aws ecr get-login-password --region ${env.AWS_REGION}
             
-            if (-not $ecrPassword) {
+            if (-not \$ecrPassword) { # Use \$ to escape $ for PowerShell
               Write-Error "aws ecr get-login-password returned an empty token."
               exit 1 # Fail the build
             }
 
-            Write-Host "Password token received, attempting Docker login to $ECR_REGISTRY..."
+            Write-Host "Password token received, attempting Docker login to ${env.ECR_REGISTRY}..."
             
             try {
-              # Use --password $ecrPassword, which is more reliable than piping
-              docker login --username AWS --password $ecrPassword $ECR_REGISTRY
+              docker login --username AWS --password \$ecrPassword ${env.ECR_REGISTRY}
               Write-Host "Docker login successful."
             } catch {
               Write-Error "Docker login FAILED. See error details above."
@@ -74,46 +74,45 @@ pipeline {
             }
             
             Write-Host "ECR repos mern-backend and mern-frontend are assumed to exist."
-          '''
+          """
         }
       }
     }
 
-    stage('Build & Push Images'){
+    # --- SIMPLIFIED BUILD & PUSH STAGES ---
+    
+    stage('Build & Push Backend') {
       steps {
-        withCredentials([
-          usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
-        ]) {
-          powershell '''
+        # 1. Change to the correct directory
+        dir('API-jokes') {
+          # 2. Use """ (GString) to let Groovy build the command string
+          powershell """
             $ErrorActionPreference = "Stop"
+            Write-Host "Building backend image: ${env.ECR_BACKEND}:${env.IMAGE_TAG}"
+            docker build -t "${env.ECR_BACKEND}:${env.IMAGE_TAG}" -t "${env.ECR_BACKEND}:latest" -f Dockerfile.prod .
             
-            # --- FIX ---
-            # Define ECR_BACKEND and ECR_FRONTEND *inside* the script
-            $ECR_BACKEND  = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
-            $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
-
-            # We are now passing the *full explicit path* to the Dockerfile
-            # and the *full explicit path* for the build context.
+            Write-Host "Pushing backend images..."
+            docker push "${env.ECR_BACKEND}:${env.IMAGE_TAG}"
+            docker push "${env.ECR_BACKEND}:latest"
+          """
+        }
+      }
+    }
+    
+    stage('Build & Push Frontend') {
+      steps {
+        # 1. Change to the correct directory
+        dir('react-client') {
+          # 2. Use """ (GString) to let Groovy build the command string
+          powershell """
+            $ErrorActionPreference = "Stop"
+            Write-Host "Building frontend image: ${env.ECR_FRONTEND}:${env.IMAGE_TAG}"
+            docker build -t "${env.ECR_FRONTEND}:${env.IMAGE_TAG}" -t "${env.ECR_FRONTEND}:latest" -f Dockerfile.prod .
             
-            Write-Host "Building backend in $env:WORKSPACE\\API-jokes"
-            # --- SYNTAX FIX ---
-            # Use quotes and ${} to handle the ':' in the tag
-            docker build -t "${ECR_BACKEND}:${env:IMAGE_TAG}" -t "${ECR_BACKEND}:latest" -f "$env:WORKSPACE\\API-jokes\\Dockerfile.prod" "$env:WORKSPACE\\API-jokes"
-            
-            Write-Host "Pushing backend to ECR..."
-            docker push "${ECR_BACKEND}:${env:IMAGE_TAG}"
-            docker push "${ECR_BACKEND}:latest"
-
-            Write-Host "Building frontend in $env:WORKSPACE\\react-client"
-            # --- SYNTAX FIX ---
-            docker build -t "${ECR_FRONTEND}:${env:IMAGE_TAG}" -t "${ECR_FRONTEND}:latest" -f "$env:WORKSPACE\\react-client\\Dockerfile.prod" "$env:WORKSPACE\\react-client"
-            
-            Write-Host "Pushing frontend to ECR..."
-            docker push "${ECR_FRONTEND}:${env:IMAGE_TAG}"
-            docker push "${ECR_FRONTEND}:latest"
-            
-            Write-Host "Build & Push complete."
-          '''
+            Write-Host "Pushing frontend images..."
+            docker push "${env.ECR_FRONTEND}:${env.IMAGE_TAG}"
+            docker push "${env.ECR_FRONTEND}:latest"
+          """
         }
       }
     }
@@ -125,7 +124,6 @@ pipeline {
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           
           Write-Host "Checking for namespace mernapp..."
-          # Use -ErrorAction SilentlyContinue to suppress "Not Found" error
           $ns = kubectl get ns mernapp -o name 2>$null
           if (-not $ns) {
             Write-Host "Namespace mernapp not found, creating..."
@@ -135,62 +133,51 @@ pipeline {
           }
           
           Write-Host "Checking for secret mongodb-cred..."
-          # This command will fail if the secret doesnt exist. 
-          # You must create it manually or add it to your Helm chart.
           kubectl -n mernapp get secret mongodb-cred
-          Write-Host "Secret 'mongodb-cred' found."
+          Write-Host "Secret mongodb-cred found."
         '''
       }
     }
 
     stage('Deploy Backend (Helm)'){
       steps {
-        powershell '''
+        # Use """ to let Groovy handle the variables
+        powershell """
           $ErrorActionPreference = "Stop"
-          $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
+          \$env:KUBECONFIG = "\$env:WORKSPACE\\kubeconfig"
           
-          # --- FIX ---
-          # Define ECR_BACKEND *inside* the script
-          $ECR_BACKEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
-
           Write-Host "Deploying backend helm chart..."
-          # Pass the full chart path to helm, which is more reliable
-          $chartPath = "$env:WORKSPACE\\K8s-helm\\backend"
+          $chartPath = "\$env:WORKSPACE\\K8s-helm\\backend"
           
-          # --- SYNTAX FIX ---
-          helm upgrade --install backend $chartPath -n mernapp `
-            --set container.image="${ECR_BACKEND}:${env:IMAGE_TAG}" `
+          helm upgrade --install backend \$chartPath -n mernapp `
+            --set container.image="${env.ECR_BACKEND}:${env.IMAGE_TAG}" `
             --set container.port=5000 `
             --wait --timeout 300s
             
           Write-Host "Waiting for backend rollout..."
           kubectl -n mernapp rollout status deploy/mern-backend --timeout=300s
-        '''
+        """
       }
     }
 
     stage('Deploy Frontend (Helm)'){
       steps {
-        powershell '''
+        # Use """ to let Groovy handle the variables
+        powershell """
           $ErrorActionPreference = "Stop"
-          $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
-          
-          # --- FIX ---
-          # Define ECR_FRONTEND *inside* the script
-          $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
+          \$env:KUBECONFIG = "\$env:WORKSPACE\\kubeconfig"
           
           Write-Host "Deploying frontend helm chart..."
-          $chartPath = "$env:WORKSPACE\\K8s-helm\\frontend"
+          $chartPath = "\$env:WORKSPACE\\K8s-helm\\frontend"
           
-          # --- SYNTAX FIX ---
-          helm upgrade --install frontend $chartPath -n mernapp `
-            --set container.image="${ECR_FRONTEND}:${env:IMAGE_TAG}" `
+          helm upgrade --install frontend \$chartPath -n mernapp `
+            --set container.image="${env.ECR_FRONTEND}:${env.IMAGE_TAG}" `
             --set container.port=80 `
             --wait --timeout 300s
             
           Write-Host "Waiting for frontend rollout..."
           kubectl -n mernapp rollout status deploy/frontend --timeout=300s
-        '''
+        """
       }
     }
 
