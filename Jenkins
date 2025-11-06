@@ -4,7 +4,8 @@ pipeline {
   environment {
     AWS_REGION     = 'us-east-2'
     AWS_ACCOUNT_ID = '577999460012'
-    # These are static strings, so defining them here is fine.
+    // --- FIX ---
+    // These are static strings, so defining them here is fine.
     ECR_REGISTRY   = "577999460012.dkr.ecr.us-east-2.amazonaws.com"
     ECR_BACKEND    = "577999460012.dkr.ecr.us-east-2.amazonaws.com/mern-backend"
     ECR_FRONTEND   = "577999460012.dkr.ecr.us-east-2.amazonaws.com/mern-frontend"
@@ -29,7 +30,8 @@ pipeline {
         withCredentials([
           string(credentialsId: 'kubeconfig-content', variable: 'KUBECONFIG_CONTENT')
         ]) {
-          # --- Switched to 'sh' ---
+          // --- FIX ---
+          // Switched to 'sh'
           sh '''
             # Create the kubeconfig file
             echo "$KUBECONFIG_CONTENT" > kubeconfig
@@ -52,7 +54,8 @@ pipeline {
         withCredentials([
           usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
         ]) {
-          # --- Switched to 'sh' ---
+          // --- FIX ---
+          // Switched to 'sh'
           sh '''
             set -e # Exit immediately if a command fails
             
@@ -69,13 +72,13 @@ pipeline {
       }
     }
 
-    # --- SIMPLIFIED BUILD & PUSH STAGES (using 'sh') ---
+    // --- SIMPLIFIED BUILD & PUSH STAGES (using 'sh') ---
     
     stage('Build & Push Backend') {
       steps {
-        # 1. Change to the correct directory
+        // 1. Change to the correct directory
         dir('API-jokes') {
-          # 2. Use 'sh'
+          // 2. Use 'sh'
           sh '''
             set -e 
             echo "Building backend image: ${ECR_BACKEND}:${IMAGE_TAG}"
@@ -91,9 +94,9 @@ pipeline {
     
     stage('Build & Push Frontend') {
       steps {
-        # 1. Change to the correct directory
+        // 1. Change to the correct directory
         dir('react-client') {
-          # 2. Use 'sh'
+          // 2. Use 'sh'
           sh '''
             set -e
             echo "Building frontend image: ${ECR_FRONTEND}:${IMAGE_TAG}"
