@@ -7,7 +7,6 @@ pipeline {
     ECR_REGISTRY    = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
     ECR_BACKEND     = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-backend"
     ECR_FRONTEND    = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-frontend"
-    // IMAGE_TAG set after checkout
   }
 
   options { disableConcurrentBuilds(); timestamps() }
@@ -30,7 +29,6 @@ pipeline {
             $ErrorActionPreference = "Stop"
             Set-Content -Path "$env:WORKSPACE\\kubeconfig" -Value $env:KUBECONFIG_CONTENT -Encoding Ascii
             $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
-            Write-Host "Kubeconfig set up."
             aws --version
             kubectl version --client=true
             helm version
@@ -39,25 +37,19 @@ pipeline {
       }
     }
 
-    stage('ECR Login & Repos') {
+    stage('ECR Login') {
       steps {
         withCredentials([usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
           powershell '''
             $ErrorActionPreference = "Stop"
-
-            Write-Host "Verifying AWS identity..."
-            aws sts get-caller-identity | Out-String | Write-Host
+            Write-Host "AWS identity:"; aws sts get-caller-identity | Out-String | Write-Host
 
             Write-Host "Logging into ECR $env:ECR_REGISTRY ..."
-            aws ecr get-login-password --region $env:AWS_REGION |
-              docker login --username AWS --password-stdin $env:ECR_REGISTRY
-            Write-Host "Docker login successful."
-
-            # Ensure repos exist (idempotent)
-            aws ecr describe-repositories --repository-names mern-backend  --region $env:AWS_REGION 2>$null `
-              | Out-Null; if ($LASTEXITCODE -ne 0) { aws ecr create-repository --repository-name mern-backend  --region $env:AWS_REGION | Out-Null }
-            aws ecr describe-repositories --repository-names mern-frontend --region $env:AWS_REGION 2>$null `
-              | Out-Null; if ($LASTEXITCODE -ne 0) { aws ecr create-repository --repository-name mern-frontend --region $env:AWS_REGION | Out-Null }
+            $pw = aws ecr get-login-password --region $env:AWS_REGION
+            if (-not $pw) { throw "Empty ECR password token." }
+            $pw | docker login --username AWS --password-stdin $env:ECR_REGISTRY
+            if ($LASTEXITCODE -ne 0) { throw "Docker login failed." }
+            Write-Host "Docker login OK."
           '''
         }
       }
@@ -68,15 +60,20 @@ pipeline {
         dir('API-jokes') {
           powershell '''
             $ErrorActionPreference = "Stop"
-            $img = "$env:ECR_BACKEND:$($env:IMAGE_TAG)"
-            $latest = "$env:ECR_BACKEND:latest"
+            $TAG    = $env:IMAGE_TAG
+            $IMG    = "$($env:ECR_BACKEND):$TAG"
+            $LATEST = "$($env:ECR_BACKEND):latest"
 
-            Write-Host "Building backend image: $img"
-            docker build -t $img -t $latest -f Dockerfile.prod .
+            Write-Host "Building backend image: $IMG"
+            if (Test-Path .\\Dockerfile.prod) {
+              docker build -t $IMG -t $LATEST -f Dockerfile.prod .
+            } else {
+              docker build -t $IMG -t $LATEST .
+            }
 
             Write-Host "Pushing backend images..."
-            docker push $img
-            docker push $latest
+            docker push $IMG
+            docker push $LATEST
           '''
         }
       }
@@ -87,15 +84,20 @@ pipeline {
         dir('react-client') {
           powershell '''
             $ErrorActionPreference = "Stop"
-            $img = "$env:ECR_FRONTEND:$($env:IMAGE_TAG)"
-            $latest = "$env:ECR_FRONTEND:latest"
+            $TAG    = $env:IMAGE_TAG
+            $IMG    = "$($env:ECR_FRONTEND):$TAG"
+            $LATEST = "$($env:ECR_FRONTEND):latest"
 
-            Write-Host "Building frontend image: $img"
-            docker build -t $img -t $latest -f Dockerfile.prod .
+            Write-Host "Building frontend image: $IMG"
+            if (Test-Path .\\Dockerfile.prod) {
+              docker build -t $IMG -t $LATEST -f Dockerfile.prod .
+            } else {
+              docker build -t $IMG -t $LATEST .
+            }
 
             Write-Host "Pushing frontend images..."
-            docker push $img
-            docker push $latest
+            docker push $IMG
+            docker push $LATEST
           '''
         }
       }
@@ -106,15 +108,7 @@ pipeline {
         powershell '''
           $ErrorActionPreference = "Stop"
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
-
-          if (-not (kubectl get ns mernapp -o name 2>$null)) {
-            Write-Host "Creating namespace mernapp ..."
-            kubectl create ns mernapp
-          } else {
-            Write-Host "Namespace mernapp exists."
-          }
-
-          Write-Host "Checking secret mongodb-cred ..."
+          if (-not (kubectl get ns mernapp -o name 2>$null)) { kubectl create ns mernapp }
           kubectl -n mernapp get secret mongodb-cred
         '''
       }
@@ -125,18 +119,14 @@ pipeline {
         powershell '''
           $ErrorActionPreference = "Stop"
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
-
           $chartPath = "$env:WORKSPACE\\K8s-helm\\backend"
-          $img = "$env:ECR_BACKEND:$($env:IMAGE_TAG)"
+          $img = "$($env:ECR_BACKEND):$($env:IMAGE_TAG)"
 
-          Write-Host "Helm upgrade/install backend with image $img"
           helm upgrade --install backend $chartPath -n mernapp `
             --set container.image="$img" `
             --set container.port=5000 `
             --wait --timeout 300s
 
-          # Deployment name is 'backend' (NOT mern-backend)
-          Write-Host "Waiting for backend rollout..."
           kubectl -n mernapp rollout status deploy/backend --timeout=300s
         '''
       }
@@ -147,32 +137,26 @@ pipeline {
         powershell '''
           $ErrorActionPreference = "Stop"
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
-
           $chartPath = "$env:WORKSPACE\\K8s-helm\\frontend"
-          $img = "$env:ECR_FRONTEND:$($env:IMAGE_TAG)"
+          $img = "$($env:ECR_FRONTEND):$($env:IMAGE_TAG)"
 
-          Write-Host "Helm upgrade/install frontend with image $img"
           helm upgrade --install frontend $chartPath -n mernapp `
             --set container.image="$img" `
             --set container.port=80 `
             --wait --timeout 300s
 
-          Write-Host "Waiting for frontend rollout..."
           kubectl -n mernapp rollout status deploy/frontend --timeout=300s
         '''
       }
     }
 
-    stage('Deploy Ingress (Helm → nginx-mern class)') {
+    stage('Deploy Ingress (Helm → nginx-mern)') {
       steps {
         powershell '''
           $ErrorActionPreference = "Stop"
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
-
           $chartPath = "$env:WORKSPACE\\K8s-helm\\ingress"
-          Write-Host "Helm upgrade/install ingress (nginx-mern class)"
           helm upgrade --install ingress $chartPath -n mernapp --wait --timeout 300s
-
           kubectl -n mernapp get ing
         '''
       }
