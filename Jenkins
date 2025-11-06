@@ -22,34 +22,32 @@ pipeline {
         }
 
         // --- UPDATED STAGE ---
-        stage('Init Tooling'){
+stage('Init Tooling'){
             steps {
                 withCredentials([
                     file(credentialsId: 'kubeconfig-content-1', variable: 'KUBECONFIG_FILE_PATH')
                 ]) {
-                    // Use """ (triple-double quotes) to allow $env:KUBECONFIG_FILE_PATH
-                    powershell """
-                        # Set the env var for this session
-                        $env:KUBECONFIG = \$env:KUBECONFIG_FILE_PATH
-                        Write-Host "Kubeconfig set up from secret file: \$env:KUBECONFIG"
+                    // --- CHANGE: Use triple-single-quotes ''' ---
+                    powershell '''
+                        # These are now treated as pure PowerShell variables
+                        $env:KUBECONFIG = $env:KUBECONFIG_FILE_PATH
+                        Write-Host "Kubeconfig set up from secret file: $env:KUBECONFIG"
                         
-                        # --- THIS IS THE FIX FOR THE NULL KUBECONFIG ---
-                        # Write the variable to a properties file for Jenkins to load
-                        "KUBECONFIG=\$env:KUBECONFIG_FILE_PATH" | Out-File -FilePath env.properties -Encoding ascii -Append
+                        "KUBECONFIG=$env:KUBECONFIG_FILE_PATH" | Out-File -FilePath env.properties -Encoding ascii -Append
 
                         aws --version
                         kubectl version --client=true
                         helm version
 
-                        Write-Host "--- Available KUBECONFIG Contexts ---"
+                        Write-Host "--- Available Kubeconfig Contexts ---"
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
-                    """
-                    // Load the properties file into the pipeline environment
-                    load 'env.properties'
+                    '''
+                    // --- END CHANGE ---
 
+                    // This part is unchanged
+                    load 'env.properties'
                     script {
-                        // This will now correctly print the path
                         echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
                     }
                 }
