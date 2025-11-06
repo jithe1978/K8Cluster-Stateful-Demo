@@ -39,26 +39,38 @@ pipeline {
       }
     }
 
-    stage('ECR Login & Repos'){
+stage('ECR Login & Repos'){
       steps {
         withCredentials([
           usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
         ]) {
           powershell '''
-           
+            
             $ErrorActionPreference = "Stop"
+
+            Write-Host "Verifying AWS identity..."
+
+            aws sts get-caller-identity
 
             Write-Host "Attempting to get ECR login password..."
             $ecrPassword = aws ecr get-login-password --region $env:AWS_REGION
             
             if (-not $ecrPassword) {
               Write-Error "aws ecr get-login-password returned an empty token. Check IAM permissions."
-             }
+
+            }
 
             Write-Host "Password token received, attempting Docker login to $env:ECR_REGISTRY..."
-            $ecrPassword | docker login --username AWS --password-stdin $env:ECR_REGISTRY
             
-            Write-Host "Docker login successful."
+
+            try {
+              $ecrPassword | docker login --username AWS --password-stdin $env:ECR_REGISTRY
+              Write-Host "Docker login successful."
+            } catch {
+              Write-Error "Docker login FAILED. See error details above."
+              exit 1
+            }
+            
             Write-Host "ECR repos mern-backend and mern-frontend are assumed to exist."
           '''
         }
