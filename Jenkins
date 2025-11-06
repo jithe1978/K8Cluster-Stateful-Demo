@@ -37,16 +37,20 @@ pipeline {
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
                     '''
+                    // Set the KUBECONFIG env var for *all subsequent stages*
                     script {
                         env.KUBECONFIG = KUBECONFIG_FILE_PATH
-                        echo "Pipeline KUBECONFIG variable set to: ${env:KUBECONFIG}"
+                        
+                        // --- THIS IS THE FIX ---
+                        // Changed ${env:KUBECONFIG} to ${env.KUBECONFIG}
+                        echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
+                        // --- END OF FIX ---
                     }
                 }
             }
         }
 
         stage('ECR Login & Repos'){
-            // (No changes needed in this stage)
             steps {
                 withCredentials([
                     usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
@@ -77,7 +81,6 @@ pipeline {
         }
         
         stage('Build & Push Backend') {
-            // (No changes needed in this stage)
             steps {
                 dir('API-jokes') {
                     powershell '''
@@ -94,7 +97,6 @@ pipeline {
         }
         
         stage('Build & Push Frontend') {
-            // (No changes needed in this stage)
             steps {
                 dir('react-client') {
                     powershell '''
@@ -110,14 +112,13 @@ pipeline {
             }
         }
 
-        // --- UPDATED STAGE ---
-        // Redirected cache to workspace folder
+        // --- All stages below use the $CACHE_PATH variable ---
         stage('Namespace & Secret check (mernapp)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "$env:WORKSPACE\\.kube-cache"
-                    Write-Host "Checking for namespace mernapp using default context..."
+                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
+                    Write-Host "Checking for namespace 'mernapp' using default context..."
                     
                     $ns = kubectl get ns mernapp -o name --cache-dir=$CACHE_PATH 2>$null
                     if (-not $ns) {
@@ -127,20 +128,18 @@ pipeline {
                         Write-Host "Namespace mernapp already exists."
                     }
                     
-                    Write-Host "Checking for secret mongodb-cred using default context..."
+                    Write-Host "Checking for secret 'mongodb-cred' using default context..."
                     kubectl -n mernapp get secret mongodb-cred --cache-dir=$CACHE_PATH
                     Write-Host "Secret mongodb-cred found."
                 '''
             }
         }
 
-        // --- UPDATED STAGE ---
-        // Redirected cache to workspace folder
         stage('Deploy Backend (Helm)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "$env:WORKSPACE\\.kube-cache"
+                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
                     $ECR_BACKEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
                     Write-Host "Deploying backend helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\backend"
@@ -156,13 +155,11 @@ pipeline {
             }
         }
 
-        // --- UPDATED STAGE ---
-        // Redirected cache to workspace folder
         stage('Deploy Frontend (Helm)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "$env:WORKSPACE\\.kube-cache"
+                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
                     $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
                     Write-Host "Deploying frontend helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\frontend"
@@ -178,13 +175,11 @@ pipeline {
             }
         }
 
-        // --- UPDATED STAGE ---
-        // Redirected cache to workspace folder
         stage('Deploy Ingress (Helm → nginx-mern)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "$env:WORKSPACE\\.kube-cache"
+                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
                     Write-Host "Deploying ingress helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\ingress"
 
@@ -194,13 +189,11 @@ pipeline {
             }
         }
 
-        // --- UPDATED STAGE ---
-        // Redirected cache to workspace folder
         stage('Cluster Check'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    $CACHE_PATH = "$env:WORKSPACE\\.kube-cache"
+                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
                     Write-Host "Final cluster check (default context):"
                     
                     kubectl -n mernapp get pods,svc,ing -o wide --cache-dir=$CACHE_PATH
@@ -213,8 +206,7 @@ pipeline {
         always { 
             powershell 'docker image prune -f' 
             powershell 'Remove-Item -Path $env:KUBECONFIG -ErrorAction SilentlyContinue' 
-           
-            powershell 'Remove-Item -Path "$env:WORKSPACE\\.kube-cache" -Recurse -Force -ErrorAction SilentlyContinue'
+            powershell 'Remove-Item -Path "$env:WORKSPACE\.kube-cache" -Recurse -Force -ErrorAction SilentlyContinue'
         } 
     }
 }
