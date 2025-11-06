@@ -21,17 +21,15 @@ pipeline {
             } 
         }
 
-        // --- SIMPLIFIED STAGE ---
         stage('Init Tooling'){
             steps {
                 withCredentials([
-                    // Load the ec2.yaml content from this credential
                     string(credentialsId: 'kubeconfig-content', variable: 'KUBECONFIG_CONTENT')
                 ]) {
                     powershell '''
                         # Write the ec2.yaml content to a file named kubeconfig
                         Set-Content -Path "$env:WORKSPACE\\kubeconfig" -Value $env:KUBECONFIG_CONTENT -Encoding Ascii
-                        Write-Host "Kubeconfig set up from kubeconfig-content."
+                        Write-Host "Kubeconfig set up from 'kubeconfig-content'."
                         
                         aws --version
                         kubectl version --client=true
@@ -40,6 +38,7 @@ pipeline {
                         # We can also check the context here
                         $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
                         Write-Host "--- Available Kubeconfig Contexts ---"
+                        # This command will now pass since you updated the credential
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
                     '''
@@ -83,7 +82,7 @@ pipeline {
         }
         
         stage('Build & Push Backend') {
-            // (No changes needed in this stage)
+             // (No changes needed in this stage)
             steps {
                 dir('API-jokes') {
                     powershell '''
@@ -116,14 +115,14 @@ pipeline {
             }
         }
 
-        // --- All stages below now use the correct context ---
+        // --- SIMPLIFIED STAGE ---
+        // Removed all --context ec2 flags
         stage('Namespace & Secret check (mernapp)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    Write-Host "Checking for namespace mernapp using context ec2..."
+                    Write-Host "Checking for namespace 'mernapp' using default context..."
                     
-                    # --context ec2 is correct
                     $ns = kubectl get ns mernapp -o name 2>$null
                     if (-not $ns) {
                         Write-Host "Namespace mernapp not found, creating..."
@@ -132,22 +131,23 @@ pipeline {
                         Write-Host "Namespace mernapp already exists."
                     }
                     
-                    Write-Host "Checking for secret mongodb-cred using context ec2..."
+                    Write-Host "Checking for secret 'mongodb-cred' using default context..."
                     kubectl -n mernapp get secret mongodb-cred
                     Write-Host "Secret mongodb-cred found."
                 '''
             }
         }
 
+        // --- SIMPLIFIED STAGE ---
+        // Removed all --kube-context and --context flags
         stage('Deploy Backend (Helm)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
                     $ECR_BACKEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
-                    Write-Host "Deploying backend helm chart using context ec2..."
+                    Write-Host "Deploying backend helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\backend"
                     
-                    # --kube-context ec2 is correct
                     helm upgrade --install backend $chartPath -n mernapp `
                         --set container.image="${ECR_BACKEND}:${env:IMAGE_TAG}" `
                         --set container.port=5000 `
@@ -159,15 +159,16 @@ pipeline {
             }
         }
 
+        // --- SIMPLIFIED STAGE ---
+        // Removed all --kube-context and --context flags
         stage('Deploy Frontend (Helm)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
                     $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
-                    Write-Host "Deploying frontend helm chart using context ec2..."
+                    Write-Host "Deploying frontend helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\frontend"
                     
-                    # --kube-context ec2 is correct
                     helm upgrade --install frontend $chartPath -n mernapp `
                         --set container.image="${ECR_FRONTEND}:${env:IMAGE_TAG}" `
                         --set container.port=80 `
@@ -179,27 +180,29 @@ pipeline {
             }
         }
 
+        // --- SIMPLIFIED STAGE ---
+        // Removed all --kube-context and --context flags
         stage('Deploy Ingress (Helm → nginx-mern)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    Write-Host "Deploying ingress helm chart using context ec2..."
+                    Write-Host "Deploying ingress helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\ingress"
 
-                    # --kube-context ec2 is correct
                     helm upgrade --install ingress $chartPath -n mernapp --wait --timeout 300s
                     kubectl -n mernapp get ing
                 '''
             }
         }
 
+        // --- SIMPLIFIED STAGE ---
+        // Removed all --context flags
         stage('Cluster Check'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    Write-Host "Final cluster check (context ec2):"
+                    Write-Host "Final cluster check (default context):"
                     
-                    # --context ec2 is correct
                     kubectl -n mernapp get pods,svc,ing -o wide
                 '''
             }
