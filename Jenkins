@@ -4,7 +4,6 @@ pipeline {
     environment {
         AWS_REGION     = 'us-east-2'
         AWS_ACCOUNT_ID = '577999460012'
-        // This will be set by the 'Init Tooling' stage
         KUBECONFIG = ''
     }
 
@@ -21,19 +20,13 @@ pipeline {
             } 
         }
 
-        // --- UPDATED STAGE ---
-        // This now uses your "Secret file" credential
+        // --- This stage is correct and needs no changes ---
         stage('Init Tooling'){
             steps {
                 withCredentials([
-                    // Use 'file' binding and your new ID
                     file(credentialsId: 'kubeconfig-content-1', variable: 'KUBECONFIG_FILE_PATH')
                 ]) {
                     powershell '''
-                        # We don't need 'Set-Content' anymore.
-                        
-                        
-                  
                         $env:KUBECONFIG = $env:KUBECONFIG_FILE_PATH
                         Write-Host "Kubeconfig set up from secret file: $env:KUBECONFIG"
                         
@@ -42,13 +35,10 @@ pipeline {
                         helm version
 
                         Write-Host "--- Available Kubeconfig Contexts ---"
-                    
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
                     '''
-                    // Set the KUBECONFIG env var for *all subsequent stages*
                     script {
-                        // In Groovy, the variable is just its name
                         env.KUBECONFIG = KUBECONFIG_FILE_PATH
                         echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
                     }
@@ -56,10 +46,8 @@ pipeline {
             }
         }
 
-        // --- ALL OTHER STAGES REMAIN THE SAME ---
-        // (No context flags are needed, as you confirmed)
-
         stage('ECR Login & Repos'){
+            // (No changes needed in this stage)
             steps {
                 withCredentials([
                     usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
@@ -90,6 +78,7 @@ pipeline {
         }
         
         stage('Build & Push Backend') {
+            // (No changes needed in this stage)
             steps {
                 dir('API-jokes') {
                     powershell '''
@@ -106,6 +95,7 @@ pipeline {
         }
         
         stage('Build & Push Frontend') {
+            // (No changes needed in this stage)
             steps {
                 dir('react-client') {
                     powershell '''
@@ -121,27 +111,31 @@ pipeline {
             }
         }
 
+        // --- UPDATED STAGE ---
+        // Added --cache-dir="NUL" to all kubectl commands
         stage('Namespace & Secret check (mernapp)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
-                    Write-Host "Checking for namespace 'mernapp' using default context..."
+                    Write-Host "Checking for namespace mernapp using default context..."
                     
-                    $ns = kubectl get ns mernapp -o name 2>$null
+                    $ns = kubectl get ns mernapp -o name --cache-dir="NUL" 2>$null
                     if (-not $ns) {
                         Write-Host "Namespace mernapp not found, creating..."
-                        kubectl create ns mernapp
+                        kubectl create ns mernapp --cache-dir="NUL"
                     } else {
                         Write-Host "Namespace mernapp already exists."
                     }
                     
-                    Write-Host "Checking for secret 'mongodb-cred' using default context..."
-                    kubectl -n mernapp get secret mongodb-cred
+                    Write-Host "Checking for secret mongodb-cred using default context..."
+                    kubectl -n mernapp get secret mongodb-cred --cache-dir="NUL"
                     Write-Host "Secret mongodb-cred found."
                 '''
             }
         }
 
+        // --- UPDATED STAGE ---
+        // Added --cache-dir="NUL" to the kubectl rollout command
         stage('Deploy Backend (Helm)'){
             steps {
                 powershell '''
@@ -156,11 +150,13 @@ pipeline {
                         --wait --timeout 300s
                         
                     Write-Host "Waiting for backend rollout..."
-                    kubectl -n mernapp rollout status deploy/mern-backend --timeout=300s
+                    kubectl -n mernapp rollout status deploy/mern-backend --timeout=300s --cache-dir="NUL"
                 '''
             }
         }
 
+        // --- UPDATED STAGE ---
+        // Added --cache-dir="NUL" to the kubectl rollout command
         stage('Deploy Frontend (Helm)'){
             steps {
                 powershell '''
@@ -175,11 +171,13 @@ pipeline {
                         --wait --timeout 300s
                         
                     Write-Host "Waiting for frontend rollout..."
-                    kubectl -n mernapp rollout status deploy/frontend --timeout=300s
+                    kubectl -n mernapp rollout status deploy/frontend --timeout=300s --cache-dir="NUL"
                 '''
             }
         }
 
+        // --- UPDATED STAGE ---
+        // Added --cache-dir="NUL" to the kubectl get ing command
         stage('Deploy Ingress (Helm → nginx-mern)'){
             steps {
                 powershell '''
@@ -188,18 +186,20 @@ pipeline {
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\ingress"
 
                     helm upgrade --install ingress $chartPath -n mernapp --wait --timeout 300s
-                    kubectl -n mernapp get ing
+                    kubectl -n mernapp get ing --cache-dir="NUL"
                 '''
             }
         }
 
+        // --- UPDATED STAGE ---
+        // Added --cache-dir="NUL" to the kubectl get command
         stage('Cluster Check'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
                     Write-Host "Final cluster check (default context):"
                     
-                    kubectl -n mernapp get pods,svc,ing -o wide
+                    kubectl -n mernapp get pods,svc,ing -o wide --cache-dir="NUL"
                 '''
             }
         }
@@ -208,7 +208,6 @@ pipeline {
     post { 
         always { 
             powershell 'docker image prune -f' 
-
             powershell 'Remove-Item -Path $env:KUBECONFIG -ErrorAction SilentlyContinue' 
         } 
     }
