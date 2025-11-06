@@ -88,17 +88,19 @@ stage('ECR Login & Repos'){
           powershell '''
             $ErrorActionPreference = "Stop"
             
+            # --- FIX ---
+            # We are now passing the *full explicit path* to the Dockerfile
+            # and the *full explicit path* for the build context.
+            
             Write-Host "Building backend in $env:WORKSPACE\\API-jokes"
-            Set-Location "$env:WORKSPACE\\API-jokes"
-            docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f Dockerfile.prod .
+            docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f "$env:WORKSPACE\\API-jokes\\Dockerfile.prod" "$env:WORKSPACE\\API-jokes"
             
             Write-Host "Pushing backend to ECR..."
             docker push $env:ECR_BACKEND:$env:IMAGE_TAG
             docker push $env:ECR_BACKEND:latest
 
             Write-Host "Building frontend in $env:WORKSPACE\\react-client"
-            Set-Location "$env:WORKSPACE\\react-client"
-            docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f Dockerfile.prod .
+            docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f "$env:WORKSPACE\\react-client\\Dockerfile.prod" "$env:WORKSPACE\\react-client"
             
             Write-Host "Pushing frontend to ECR..."
             docker push $env:ECR_FRONTEND:$env:IMAGE_TAG
@@ -109,7 +111,6 @@ stage('ECR Login & Repos'){
         }
       }
     }
-
     stage('Namespace & Secret check (mernapp)'){
       steps {
         powershell '''
