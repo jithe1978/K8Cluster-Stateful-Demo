@@ -5,9 +5,6 @@ pipeline {
     AWS_REGION     = 'us-east-2'
     AWS_ACCOUNT_ID = '577999460012'
     
-    // *** FIX ***
-    // We need a variable for the REGISTRY (for login)
-    // and separate variables for the REPOSITORIES (for build/push)
     ECR_REGISTRY   = "577999460012.dkr.ecr.us-east-2.amazonaws.com"
     ECR_BACKEND    = "577999460012.dkr.ecr.us-east-2.amazonaws.com/mern-backend"
     ECR_FRONTEND   = "577999460012.dkr.ecr.us-east-2.amazonaws.com/mern-frontend"
@@ -30,8 +27,8 @@ pipeline {
 
     stage('Init Tooling'){
       steps {
+        // This stage just sets up the kubeconfig
         withCredentials([
-          usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY'),
           string(credentialsId: 'kubeconfig-content', variable: 'KUBECONFIG_CONTENT')
         ]) {
           powershell '''
@@ -50,47 +47,58 @@ pipeline {
 
     stage('ECR Login & Repos'){
       steps {
-        powershell '''
-          # *** FIX ***
-          # Log in to the $ECR_REGISTRY, not the $ECR_BACKEND
-          aws ecr get-login-password --region $env:AWS_REGION |
-            docker login --username AWS --password-stdin $env:ECR_REGISTRY
+        // *** FIX ***
+        // We MUST load the aws-creds in THIS stage
+        withCredentials([
+          usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
+        ]) {
+          powershell '''
+            # Now this command will run authenticated
+            aws ecr get-login-password --region $env:AWS_REGION |
+              docker login --username AWS --password-stdin $env:ECR_REGISTRY
 
-          # Correct PowerShell "try/create" logic
-          aws ecr describe-repositories --repository-names mern-backend --region $env:AWS_REGION 2>$null
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Repository 'mern-backend' not found, creating it..."
-            aws ecr create-repository --repository-name mern-backend --region $env:AWS_REGION | Out-Null
-          }
+            # Correct PowerShell "try/create" logic
+            aws ecr describe-repositories --repository-names mern-backend --region $env:AWS_REGION 2>$null
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "Repository 'mern-backend' not found, creating it..."
+              aws ecr create-repository --repository-name mern-backend --region $env:AWS_REGION | Out-Null
+            }
 
-          aws ecr describe-repositories --repository-names mern-frontend --region $env:AWS_REGION 2>$null
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Repository 'mern-frontend' not found, creating it..."
-            aws ecr create-repository --repository-name mern-frontend --region $env:AWS_REGION | Out-Null
-          }
-        '''
+            aws ecr describe-repositories --repository-names mern-frontend --region $env:AWS_REGION 2>$null
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "Repository 'mern-frontend' not found, creating it..."
+              aws ecr create-repository --repository-name mern-frontend --region $env:AWS_REGION | Out-Null
+            }
+          '''
+        }
       }
     }
 
     stage('Build & Push Images'){
       steps {
-        powershell '''
-          Write-Host "Building backend in $env:WORKSPACE\\API-jokes"
-          Set-Location "$env:WORKSPACE\\API-jokes"
-          
-          # This command is correct
-          docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f Dockerfile.prod .
-          docker push $env:ECR_BACKEND:$env:IMAGE_TAG
-          docker push $env:ECR_BACKEND:latest
+        // *** FIX ***
+        // Load credentials here as well for docker push
+        withCredentials([
+          usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
+        ]) {
+          powershell '''
+            Write-Host "Building backend in $env:WORKSPACE\\API-jokes"
+            Set-Location "$env:WORKSPACE\\API-jokes"
+            
+            docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f Dockerfile.prod .
+            
+            # This push now works because of the successful login
+            docker push $env:ECR_BACKEND:$env:IMAGE_TAG
+            docker push $env:ECR_BACKEND:latest
 
-          Write-Host "Building frontend in $env:WORKSPACE\\react-client"
-          Set-Location "$env:WORKSPACE\\react-client"
+            Write-Host "Building frontend in $env:WORKSPACE\\react-client"
+            Set-Location "$env:WORKSPACE\\react-client"
 
-          # This command is correct
-          docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f Dockerfile.prod .
-          docker push $env:ECR_FRONTEND:$env:IMAGE_TAG
-          docker push $env:ECR_FRONTEND:latest
-        '''
+            docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f Dockerfile.prod .
+            docker push $env:ECR_FRONTEND:$env:IMAGE_TAG
+            docker push $env:ECR_FRONTEND:latest
+          '''
+        }
       }
     }
 
