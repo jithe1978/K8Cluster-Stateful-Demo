@@ -41,16 +41,19 @@ pipeline {
         withCredentials([
           usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
         ]) {
-          powershell """
+          // --- FIX: Switched to single-quotes ''' ---
+          powershell '''
             $ErrorActionPreference = "Stop"
 
-            $ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+            # Use PowerShell syntax to build the variable
+            $ECR_REGISTRY = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com"
 
             Write-Host "Verifying AWS identity..."
             aws sts get-caller-identity
 
-            Write-Host "Attempting to get ECR login password for region ${env.AWS_REGION}..."
-            $ecrPassword = aws ecr get-login-password --region ${env.AWS_REGION}
+            Write-Host "Attempting to get ECR login password for region ${env:AWS_REGION}..."
+            # No backslash needed on $ecrPassword
+            $ecrPassword = aws ecr get-login-password --region ${env:AWS_REGION}
             
             if (-not $ecrPassword) { 
               Write-Error "aws ecr get-login-password returned an empty token."
@@ -68,7 +71,7 @@ pipeline {
             }
             
             Write-Host "ECR repos mern-backend and mern-frontend are assumed to exist."
-          """
+          '''
         }
       }
     }
@@ -76,18 +79,21 @@ pipeline {
     stage('Build & Push Backend') {
       steps {
         dir('API-jokes') {
-          powershell """
+          // --- FIX: Switched to single-quotes ''' ---
+          powershell '''
             $ErrorActionPreference = "Stop"
 
-            $ECR_BACKEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-backend"
+            # Use PowerShell syntax to build the variable
+            $ECR_BACKEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
 
-            Write-Host "Building backend image: $ECR_BACKEND:${env.IMAGE_TAG}"
-            docker build -t "$ECR_BACKEND:${env.IMAGE_TAG}" -t "$ECR_BACKEND:latest" -f Dockerfile.prod .
+            Write-Host "Building backend image: $ECR_BACKEND:${env:IMAGE_TAG}"
+            # Use PowerShell syntax for all variables
+            docker build -t "$ECR_BACKEND:${env:IMAGE_TAG}" -t "$ECR_BACKEND:latest" -f Dockerfile.prod .
             
             Write-Host "Pushing backend images..."
-            docker push "$ECR_BACKEND:${env.IMAGE_TAG}"
+            docker push "$ECR_BACKEND:${env:IMAGE_TAG}"
             docker push "$ECR_BACKEND:latest"
-          """
+          '''
         }
       }
     }
@@ -95,18 +101,20 @@ pipeline {
     stage('Build & Push Frontend') {
       steps {
         dir('react-client') {
-          powershell """
+          
+          powershell '''
             $ErrorActionPreference = "Stop"
 
-            $ECR_FRONTEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-frontend"
+            # Use PowerShell syntax to build the variable
+            $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
 
-            Write-Host "Building frontend image: $ECR_FRONTEND:${env.IMAGE_TAG}"
-            docker build -t "$ECR_FRONTEND:${env.IMAGE_TAG}" -t "$ECR_FRONTEND:latest" -f Dockerfile.prod .
+            Write-Host "Building frontend image: $ECR_FRONTEND:${env:IMAGE_TAG}"
+            docker build -t "$ECR_FRONTEND:${env:IMAGE_TAG}" -t "$ECR_FRONTEND:latest" -f Dockerfile.prod .
             
             Write-Host "Pushing frontend images..."
-            docker push "$ECR_FRONTEND:${env.IMAGE_TAG}"
+            docker push "$ECR_FRONTEND:${env:IMAGE_TAG}"
             docker push "$ECR_FRONTEND:latest"
-          """
+          '''
         }
       }
     }
@@ -135,45 +143,47 @@ pipeline {
 
     stage('Deploy Backend (Helm)'){
       steps {
-        powershell """
+        // --- FIX: Switched to single-quotes ''' ---
+        powershell '''
           $ErrorActionPreference = "Stop"
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig" 
           
-          $ECR_BACKEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-backend"
+          $ECR_BACKEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
           
           Write-Host "Deploying backend helm chart..."
           $chartPath = "$env:WORKSPACE\\K8s-helm\\backend"
           
           helm upgrade --install backend $chartPath -n mernapp `
-            --set container.image="$ECR_BACKEND:${env.IMAGE_TAG}" `
+            --set container.image="$ECR_BACKEND:${env:IMAGE_TAG}" `
             --set container.port=5000 `
             --wait --timeout 300s
             
           Write-Host "Waiting for backend rollout..."
           kubectl -n mernapp rollout status deploy/mern-backend --timeout=300s
-        """
+        '''
       }
     }
 
     stage('Deploy Frontend (Helm)'){
       steps {
-        powershell """
+        // --- FIX: Switched to single-quotes ''' ---
+        powershell '''
           $ErrorActionPreference = "Stop"
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           
-          $ECR_FRONTEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-frontend"
+          $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
 
           Write-Host "Deploying frontend helm chart..."
           $chartPath = "$env:WORKSPACE\\K8s-helm\\frontend"
           
           helm upgrade --install frontend $chartPath -n mernapp `
-            --set container.image="$ECR_FRONTEND:${env.IMAGE_TAG}" `
+            --set container.image="$ECR_FRONTEND:${env:IMAGE_TAG}" `
             --set container.port=80 `
             --wait --timeout 300s
             
           Write-Host "Waiting for frontend rollout..."
           kubectl -n mernapp rollout status deploy/frontend --timeout=300s
-        """
+        '''
       }
     }
 
