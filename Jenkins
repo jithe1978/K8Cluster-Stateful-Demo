@@ -36,11 +36,9 @@ pipeline {
           aws ecr get-login-password --region $env:AWS_REGION |
             docker login --username AWS --password-stdin $env:AWS_ACCOUNT_ID.dkr.ecr.$env:AWS_REGION.amazonaws.com
 
-          aws ecr describe-repositories --repository-names mern-backend  --region $env:AWS_REGION 2>$null `
-            || aws ecr create-repository --repository-name mern-backend  --region $env:AWS_REGION | Out-Null
-          aws ecr describe-repositories --repository-names mern-frontend --region $env:AWS_REGION 2>$null `
-            || aws ecr create-repository --repository-name mern-frontend --region $env:AWS_REGION | Out-Null
-        '''
+          aws ecr describe-repositories --repository-names mern-backend  --region $env:AWS_REGION 2>$null
+          aws ecr describe-repositories --repository-names mern-frontend --region $env:AWS_REGION 2>$null
+          '''
       }
     }
 
