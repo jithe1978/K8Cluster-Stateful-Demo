@@ -15,12 +15,11 @@ pipeline {
                 checkout scm 
                 script {
                     env.IMAGE_TAG = env.GIT_COMMIT.take(7)
-                    echo "IMAGE_TAG=${env.IMAGE_TAG}"
+                    echo "IMAGE_TAG=${env:IMAGE_TAG}"
                 }
             } 
         }
 
-        // --- This stage is correct and needs no changes ---
         stage('Init Tooling'){
             steps {
                 withCredentials([
@@ -40,7 +39,7 @@ pipeline {
                     '''
                     script {
                         env.KUBECONFIG = KUBECONFIG_FILE_PATH
-                        echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
+                        echo "Pipeline KUBECONFIG variable set to: ${env:KUBECONFIG}"
                     }
                 }
             }
@@ -112,34 +111,36 @@ pipeline {
         }
 
         // --- UPDATED STAGE ---
-        // Added --cache-dir="NUL" to all kubectl commands
+        // Redirected cache to workspace folder
         stage('Namespace & Secret check (mernapp)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
+                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
                     Write-Host "Checking for namespace mernapp using default context..."
                     
-                    $ns = kubectl get ns mernapp -o name --cache-dir="NUL" 2>$null
+                    $ns = kubectl get ns mernapp -o name --cache-dir=$CACHE_PATH 2>$null
                     if (-not $ns) {
                         Write-Host "Namespace mernapp not found, creating..."
-                        kubectl create ns mernapp --cache-dir="NUL"
+                        kubectl create ns mernapp --cache-dir=$CACHE_PATH
                     } else {
                         Write-Host "Namespace mernapp already exists."
                     }
                     
                     Write-Host "Checking for secret mongodb-cred using default context..."
-                    kubectl -n mernapp get secret mongodb-cred --cache-dir="NUL"
+                    kubectl -n mernapp get secret mongodb-cred --cache-dir=$CACHE_PATH
                     Write-Host "Secret mongodb-cred found."
                 '''
             }
         }
 
         // --- UPDATED STAGE ---
-        // Added --cache-dir="NUL" to the kubectl rollout command
+        // Redirected cache to workspace folder
         stage('Deploy Backend (Helm)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
+                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
                     $ECR_BACKEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
                     Write-Host "Deploying backend helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\backend"
@@ -150,17 +151,18 @@ pipeline {
                         --wait --timeout 300s
                         
                     Write-Host "Waiting for backend rollout..."
-                    kubectl -n mernapp rollout status deploy/mern-backend --timeout=300s --cache-dir="NUL"
+                    kubectl -n mernapp rollout status deploy/mern-backend --timeout=300s --cache-dir=$CACHE_PATH
                 '''
             }
         }
 
         // --- UPDATED STAGE ---
-        // Added --cache-dir="NUL" to the kubectl rollout command
+        // Redirected cache to workspace folder
         stage('Deploy Frontend (Helm)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
+                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
                     $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
                     Write-Host "Deploying frontend helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\frontend"
@@ -171,35 +173,37 @@ pipeline {
                         --wait --timeout 300s
                         
                     Write-Host "Waiting for frontend rollout..."
-                    kubectl -n mernapp rollout status deploy/frontend --timeout=300s --cache-dir="NUL"
+                    kubectl -n mernapp rollout status deploy/frontend --timeout=300s --cache-dir=$CACHE_PATH
                 '''
             }
         }
 
         // --- UPDATED STAGE ---
-        // Added --cache-dir="NUL" to the kubectl get ing command
+        // Redirected cache to workspace folder
         stage('Deploy Ingress (Helm → nginx-mern)'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
+                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
                     Write-Host "Deploying ingress helm chart using default context..."
                     $chartPath = "$env:WORKSPACE\\K8s-helm\\ingress"
 
                     helm upgrade --install ingress $chartPath -n mernapp --wait --timeout 300s
-                    kubectl -n mernapp get ing --cache-dir="NUL"
+                    kubectl -n mernapp get ing --cache-dir=$CACHE_PATH
                 '''
             }
         }
 
         // --- UPDATED STAGE ---
-        // Added --cache-dir="NUL" to the kubectl get command
+        // Redirected cache to workspace folder
         stage('Cluster Check'){
             steps {
                 powershell '''
                     $ErrorActionPreference = "Stop"
+                    $CACHE_PATH = "$env:WORKSPACE\.kube-cache"
                     Write-Host "Final cluster check (default context):"
                     
-                    kubectl -n mernapp get pods,svc,ing -o wide --cache-dir="NUL"
+                    kubectl -n mernapp get pods,svc,ing -o wide --cache-dir=$CACHE_PATH
                 '''
             }
         }
@@ -209,6 +213,8 @@ pipeline {
         always { 
             powershell 'docker image prune -f' 
             powershell 'Remove-Item -Path $env:KUBECONFIG -ErrorAction SilentlyContinue' 
+           
+            powershell 'Remove-Item -Path "$env:WORKSPACE\.kube-cache" -Recurse -Force -ErrorAction SilentlyContinue'
         } 
     }
 }
