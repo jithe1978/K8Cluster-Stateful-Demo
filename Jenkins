@@ -4,8 +4,12 @@ pipeline {
   environment {
     AWS_REGION     = 'us-east-2'
     AWS_ACCOUNT_ID = '577999460012'
-    ECR_BACKEND    = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-backend"
-    ECR_FRONTEND   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-frontend"
+    
+    // *** FIX ***
+    // The variables were not interpolating correctly.
+    // Hard-code the full ECR path since the values are static.
+    ECR_BACKEND    = "577999460012.dkr.ecr.us-east-2.amazonaws.com/mern-backend"
+    ECR_FRONTEND   = "577999460012.dkr.ecr.us-east-2.amazonaws.com/mern-frontend"
     // IMAGE_TAG is now set in the 'Checkout' stage
   }
 
@@ -46,8 +50,9 @@ pipeline {
     stage('ECR Login & Repos'){
       steps {
         powershell '''
+          # $env:ECR_BACKEND will now be correctly populated
           aws ecr get-login-password --region $env:AWS_REGION |
-            docker login --username AWS --password-stdin $env:AWS_ACCOUNT_ID.dkr.ecr.$env:AWS_REGION.amazonaws.com
+            docker login --username AWS --password-stdin $env:ECR_BACKEND
 
           # Correct PowerShell "try/create" logic
           aws ecr describe-repositories --repository-names mern-backend --region $env:AWS_REGION 2>$null
@@ -73,7 +78,7 @@ pipeline {
           Write-Host "Building backend in $env:WORKSPACE\\API-jokes"
           Set-Location "$env:WORKSPACE\\API-jokes"
           
-
+          # Build path is '.' (current directory)
           docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f Dockerfile.prod .
           docker push $env:ECR_BACKEND:$env:IMAGE_TAG
           docker push $env:ECR_BACKEND:latest
@@ -81,8 +86,7 @@ pipeline {
           Write-Host "Building frontend in $env:WORKSPACE\\react-client"
           Set-Location "$env:WORKSPACE\\react-client"
 
-          # *** FIX ***
-          # Build path is '.' (current directory), not react-client
+          # Build path is '.' (current directory)
           docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f Dockerfile.prod .
           docker push $env:ECR_FRONTEND:$env:IMAGE_TAG
           docker push $env:ECR_FRONTEND:latest
@@ -108,7 +112,6 @@ pipeline {
         powershell '''
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           
-          # --- PATHING FIX ---
           # We use Set-Location to change to the correct chart directory
           Set-Location "$env:WORKSPACE\\K8s-helm\\backend"
           
@@ -127,7 +130,6 @@ pipeline {
         powershell '''
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           
-          # --- PATHING FIX ---
           Set-Location "$env:WORKSPACE\\K8s-helm\\frontend"
           
           helm upgrade --install frontend . -n mernapp `
@@ -144,7 +146,6 @@ pipeline {
         powershell '''
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           
-          # --- PATHING FIX ---
           Set-Location "$env:WORKSPACE\\K8s-helm\\ingress"
 
           helm upgrade --install ingress . -n mernapp --wait --timeout 300s
@@ -167,6 +168,7 @@ pipeline {
     always { 
       powershell 'docker image prune -f' 
       
+      // Clean up the kubeconfig file from the workspace
       powershell 'Remove-Item -Path "$env:WORKSPACE\\kubeconfig" -ErrorAction SilentlyContinue' 
     } 
   }
