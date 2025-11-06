@@ -81,12 +81,14 @@ pipeline {
 
             $ECR_BACKEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-backend"
 
-            Write-Host "Building backend image: $ECR_BACKEND:${env:IMAGE_TAG}"
-            docker build -t "$ECR_BACKEND:${env:IMAGE_TAG}" -t "$ECR_BACKEND:latest" -f Dockerfile.prod .
+            # --- SYNTAX FIX ---
+            # Use ${...} to correctly handle the colon in the tag
+            Write-Host "Building backend image: ${ECR_BACKEND}:${env:IMAGE_TAG}"
+            docker build -t "${ECR_BACKEND}:${env:IMAGE_TAG}" -t "${ECR_BACKEND}:latest" -f Dockerfile.prod .
             
             Write-Host "Pushing backend images..."
-            docker push "$ECR_BACKEND:${env:IMAGE_TAG}"
-            docker push "$ECR_BACKEND:latest"
+            docker push "${ECR_BACKEND}:${env:IMAGE_TAG}"
+            docker push "${ECR_BACKEND}:latest"
           '''
         }
       }
@@ -100,12 +102,13 @@ pipeline {
 
             $ECR_FRONTEND = "${env:AWS_ACCOUNT_ID}.dkr.ecr.${env:AWS_REGION}.amazonaws.com/mern-frontend"
 
-            Write-Host "Building frontend image: $ECR_FRONTEND:${env:IMAGE_TAG}"
-            docker build -t "$ECR_FRONTEND:${env:IMAGE_TAG}" -t "$ECR_FRONTEND:latest" -f Dockerfile.prod .
+            # --- SYNTAX FIX ---
+            Write-Host "Building frontend image: ${ECR_FRONTEND}:${env:IMAGE_TAG}"
+            docker build -t "${ECR_FRONTEND}:${env:IMAGE_TAG}" -t "${ECR_FRONTEND}:latest" -f Dockerfile.prod .
             
             Write-Host "Pushing frontend images..."
-            docker push "$ECR_FRONTEND:${env:IMAGE_TAG}"
-            docker push "$ECR_FRONTEND:latest"
+            docker push "${ECR_FRONTEND}:${env:IMAGE_TAG}"
+            docker push "${ECR_FRONTEND}:latest"
           '''
         }
       }
@@ -144,8 +147,9 @@ pipeline {
           Write-Host "Deploying backend helm chart..."
           $chartPath = "$env:WORKSPACE\\K8s-helm\\backend"
           
+          # --- SYNTAX FIX ---
           helm upgrade --install backend $chartPath -n mernapp `
-            --set container.image="$ECR_BACKEND:${env:IMAGE_TAG}" `
+            --set container.image="${ECR_BACKEND}:${env:IMAGE_TAG}" `
             --set container.port=5000 `
             --wait --timeout 300s
             
@@ -166,8 +170,9 @@ pipeline {
           Write-Host "Deploying frontend helm chart..."
           $chartPath = "$env:WORKSPACE\\K8s-helm\\frontend"
           
+          # --- SYNTAX FIX ---
           helm upgrade --install frontend $chartPath -n mernapp `
-            --set container.image="$ECR_FRONTEND:${env:IMAGE_TAG}" `
+            --set container.image="${ECR_FRONTEND}:${env:IMAGE_TAG}" `
             --set container.port=80 `
             --wait --timeout 300s
             
