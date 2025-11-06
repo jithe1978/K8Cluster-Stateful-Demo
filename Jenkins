@@ -48,7 +48,7 @@ pipeline {
             $ErrorActionPreference = "Stop"
 
             // --- FIX ---
-            // Define ECR_REGISTRY *inside* the script using Groovy's ${...}
+            // Define ECR_REGISTRY *inside* the script using Groovy
             $ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
 
             Write-Host "Verifying AWS identity..."
