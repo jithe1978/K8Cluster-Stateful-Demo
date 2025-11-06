@@ -2,18 +2,28 @@ pipeline {
   agent any
 
   environment {
-    AWS_REGION      = 'us-east-2'
-    AWS_ACCOUNT_ID  = '577999460012'
-    ECR_BACKEND     = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-backend"
-    ECR_FRONTEND    = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-frontend"
-    IMAGE_TAG       = "${env.GIT_COMMIT.take(7)}"
-    WORKDIR         = 'K8Networking'
+    AWS_REGION     = 'us-east-2'
+    AWS_ACCOUNT_ID = '577999460012'
+    ECR_BACKEND    = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-backend"
+    ECR_FRONTEND   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-frontend"
+    // IMAGE_TAG is now set in the 'Checkout' stage
+    // WORKDIR variable is removed as it was incorrect
   }
 
   options { disableConcurrentBuilds(); timestamps() }
 
   stages {
-    stage('Checkout'){ steps { checkout scm } }
+    stage('Checkout'){ 
+      steps { 
+        checkout scm 
+        script {
+          // *** FIX ***
+          // Set IMAGE_TAG *after* checkout so env.GIT_COMMIT exists
+          env.IMAGE_TAG = env.GIT_COMMIT.take(7)
+          echo "IMAGE_TAG=${env.IMAGE_TAG}"
+        }
+      } 
+    }
 
     stage('Init Tooling'){
       steps {
@@ -23,8 +33,13 @@ pipeline {
         ]) {
           powershell '''
             Set-Content -Path "$env:WORKSPACE\\kubeconfig" -Value $env:KUBECONFIG_CONTENT -Encoding Ascii
+            
+            # Set KUBECONFIG for all subsequent stages
             $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
-            aws --version; kubectl version --client=true; helm version
+
+            aws --version
+            kubectl version --client=true
+            helm version
           '''
         }
       }
@@ -36,26 +51,44 @@ pipeline {
           aws ecr get-login-password --region $env:AWS_REGION |
             docker login --username AWS --password-stdin $env:AWS_ACCOUNT_ID.dkr.ecr.$env:AWS_REGION.amazonaws.com
 
-          aws ecr describe-repositories --repository-names mern-backend  --region $env:AWS_REGION 2>$null
+          # *** FIX *** # Re-adding the correct PowerShell "try/create" logic
+          aws ecr describe-repositories --repository-names mern-backend --region $env:AWS_REGION 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Repository 'mern-backend' not found, creating it..."
+            aws ecr create-repository --repository-name mern-backend --region $env:AWS_REGION | Out-Null
+          }
+
           aws ecr describe-repositories --repository-names mern-frontend --region $env:AWS_REGION 2>$null
-          '''
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Repository 'mern-frontend' not found, creating it..."
+            aws ecr create-repository --repository-name mern-frontend --region $env:AWS_REGION | Out-Null
+          }
+        '''
       }
     }
 
     stage('Build & Push Images'){
       steps {
         powershell '''
+          # --- PATHING FIX ---
+
+          # 1. Change to the backend directory.
           Write-Host "Building backend in $env:WORKSPACE\\API-jokes"
           Set-Location "$env:WORKSPACE\\API-jokes"
-          docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f Dockerfile.prod .\\API-jokes
-          docker push  $env:ECR_BACKEND:$env:IMAGE_TAG
-          docker push  $env:ECR_BACKEND:latest
+          
+          # 2. Build using Dockerfile.prod in THIS directory ('.')
+          docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f Dockerfile.prod .
+          docker push $env:ECR_BACKEND:$env:IMAGE_TAG
+          docker push $env:ECR_BACKEND:latest
+
           # 3. Change to the frontend directory
           Write-Host "Building frontend in $env:WORKSPACE\\react-client"
           Set-Location "$env:WORKSPACE\\react-client"
-          docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f Dockerfile.prod .\\react-client
-          docker push  $env:ECR_FRONTEND:$env:IMAGE_TAG
-          docker push  $env:ECR_FRONTEND:latest
+
+          # 4. Build using Dockerfile.prod in THIS directory ('.')
+          docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f Dockerfile.prod .
+          docker push $env:ECR_FRONTEND:$env:IMAGE_TAG
+          docker push $env:ECR_FRONTEND:latest
         '''
       }
     }
@@ -65,6 +98,9 @@ pipeline {
         powershell '''
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
           kubectl get ns mernapp 2>$null; if ($LASTEXITCODE -ne 0) { kubectl create ns mernapp }
+          
+          # This command will fail if the secret doesn't exist. 
+          # You may need to create it manually or add it to your Helm chart.
           kubectl -n mernapp get secret mongodb-cred
         '''
       }
@@ -74,12 +110,17 @@ pipeline {
       steps {
         powershell '''
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
-          cd $env:WORKDIR
-          helm upgrade --install backend K8s-helm\\backend -n mernapp `
+          
+          # --- PATHING FIX ---
+          # We use Set-Location to change to the correct chart directory
+          Set-Location "$env:WORKSPACE\\K8s-helm\\backend"
+          
+          # We deploy '.' (the current directory)
+          helm upgrade --install backend . -n mernapp `
             --set container.image=$env:ECR_BACKEND:$env:IMAGE_TAG `
             --set container.port=5000 `
             --wait --timeout 300s
-          kubectl -n mernapp rollout status deploy/backend --timeout=300s
+          kubectl -n mernapp rollout status deploy/mern-backend --timeout=300s
         '''
       }
     }
@@ -88,8 +129,11 @@ pipeline {
       steps {
         powershell '''
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
-          cd $env:WORKDIR
-          helm upgrade --install frontend K8s-helm\\frontend -n mernapp `
+          
+          # --- PATHING FIX ---
+          Set-Location "$env:WORKSPACE\\K8s-helm\\frontend"
+          
+          helm upgrade --install frontend . -n mernapp `
             --set container.image=$env:ECR_FRONTEND:$env:IMAGE_TAG `
             --set container.port=80 `
             --wait --timeout 300s
@@ -102,8 +146,11 @@ pipeline {
       steps {
         powershell '''
           $env:KUBECONFIG = "$env:WORKSPACE\\kubeconfig"
-          cd $env:WORKDIR
-          helm upgrade --install ingress K8s-helm\\ingress -n mernapp --wait --timeout 300s
+          
+          # --- PATHING FIX ---
+          Set-Location "$env:WORKSPACE\\K8s-helm\\ingress"
+
+          helm upgrade --install ingress . -n mernapp --wait --timeout 300s
           kubectl -n mernapp get ing
         '''
       }
@@ -119,5 +166,12 @@ pipeline {
     }
   }
 
-  post { always { powershell 'docker image prune -f' } }
+  post { 
+    always { 
+      powershell 'docker image prune -f' 
+      
+      # Clean up the kubeconfig file from the workspace
+      powershell 'Remove-Item -Path "$env:WORKSPACE\\kubeconfig" -ErrorAction SilentlyContinue' 
+    } 
+  }
 }
