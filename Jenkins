@@ -4,7 +4,8 @@ pipeline {
     environment {
         AWS_REGION     = 'us-east-2'
         AWS_ACCOUNT_ID = '577999460012'
-        KUBECONFIG = ''
+        // This will be set by the 'Init Tooling' stage
+        KUBECONFIG = '' 
     }
 
     options { disableConcurrentBuilds(); timestamps() }
@@ -20,67 +21,82 @@ pipeline {
             } 
         }
 
+        // --- UPDATED STAGE ---
         stage('Init Tooling'){
             steps {
                 withCredentials([
                     file(credentialsId: 'kubeconfig-content-1', variable: 'KUBECONFIG_FILE_PATH')
                 ]) {
-                    powershell '''
-                        $env:KUBECONFIG = $env:KUBECONFIG_FILE_PATH
-                        Write-Host "Kubeconfig set up from secret file: $env:KUBECONFIG"
+                    // Use """ (triple-double quotes) to allow $env:KUBECONFIG_FILE_PATH
+                    powershell """
+                        # Set the env var for this session
+                        $env:KUBECONFIG = \$env:KUBECONFIG_FILE_PATH
+                        Write-Host "Kubeconfig set up from secret file: \$env:KUBECONFIG"
                         
+                        # --- THIS IS THE FIX FOR THE NULL KUBECONFIG ---
+                        # Write the variable to a properties file for Jenkins to load
+                        "KUBECONFIG=\$env:KUBECONFIG_FILE_PATH" | Out-File -FilePath env.properties -Encoding ascii -Append
+
                         aws --version
                         kubectl version --client=true
                         helm version
 
-                        Write-Host "--- Available Kubeconfig Contexts ---"
+                        Write-Host "--- Available KUBECONFIG Contexts ---"
                         kubectl config get-contexts
                         Write-Host "---------------------------------------"
-                    '''
+                    """
+                    // Load the properties file into the pipeline environment
+                    load 'env.properties'
+
                     script {
-                        env.KUBECONFIG = KUBECONFIG_FILE_PATH
+                        // This will now correctly print the path
                         echo "Pipeline KUBECONFIG variable set to: ${env.KUBECONFIG}"
                     }
                 }
             }
         }
 
+        // --- UPDATED STAGE ---
         stage('ECR Login & Repos'){
-            // (No changes needed in this stage)
             steps {
                 withCredentials([
                     usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
-                    powershell '''
+                    // Use """ (triple-double quotes) to allow ${env.AWS_REGION} etc.
+                    powershell """
                         $ErrorActionPreference = "Stop"
                         $ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
                         Write-Host "Verifying AWS identity..."
                         aws sts get-caller-identity
+                        
+                        # This line is now fixed
                         Write-Host "Attempting to get ECR login password for region ${env.AWS_REGION}..."
                         $ecrPassword = aws ecr get-login-password --region ${env.AWS_REGION}
-                        if (-not $ecrPassword) { 
+                        
+                        if (-not \$ecrPassword) { 
                             Write-Error "aws ecr get-login-password returned an empty token."
                             exit 1 
                         }
-                        Write-Host "Password token received, attempting Docker login to $ECR_REGISTRY..."
+                        Write-Host "Password token received, attempting Docker login to \$ECR_REGISTRY..."
                         try {
-                            docker login --username AWS --password $ecrPassword $ECR_REGISTRY
+                            docker login --username AWS --password \$ecrPassword \$ECR_REGISTRY
                             Write-Host "Docker login successful."
                         } catch {
                             Write-Error "Docker login FAILED. See error details above."
                             exit 1 
                         }
                         Write-Host "ECR repos mern-backend and mern-frontend are assumed to exist."
-                    '''
+                    """
                 }
             }
         }
         
+        // --- UPDATED STAGE ---
         stage('Build & Push Backend') {
-            // (This stage is correct, it uses Groovy vars properly)
             steps {
                 dir('API-jokes') {
-                    powershell '''
+                    // Use """ (triple-double quotes)
+                    powershell """
                         $ErrorActionPreference = "Stop"
                         $ECR_BACKEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-backend"
                         Write-Host "Building backend image: ${ECR_BACKEND}:${env.IMAGE_TAG}"
@@ -88,16 +104,17 @@ pipeline {
                         Write-Host "Pushing backend images..."
                         docker push "${ECR_BACKEND}:${env.IMAGE_TAG}"
                         docker push "${ECR_BACKEND}:latest"
-                    '''
+                    """
                 }
             }
         }
         
+        // --- UPDATED STAGE ---
         stage('Build & Push Frontend') {
-            // (This stage is correct, it uses Groovy vars properly)
             steps {
                 dir('react-client') {
-                    powershell '''
+                    // Use """ (triple-double quotes)
+                    powershell """
                         $ErrorActionPreference = "Stop"
                         $ECR_FRONTEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-frontend"
                         Write-Host "Building frontend image: ${ECR_FRONTEND}:${env.IMAGE_TAG}"
@@ -105,7 +122,7 @@ pipeline {
                         Write-Host "Pushing frontend images..."
                         docker push "${ECR_FRONTEND}:${env.IMAGE_TAG}"
                         docker push "${ECR_FRONTEND}:latest"
-                    '''
+                    """
                 }
             }
         }
@@ -113,111 +130,115 @@ pipeline {
         // --- UPDATED STAGE ---
         stage('Namespace & Secret check (mernapp)'){
             steps {
-                powershell '''
+                // Use """ (triple-double quotes)
+                powershell """
                     $ErrorActionPreference = "Stop"
-                    # Corrected syntax: ${env.WORKSPACE} and \\
                     $CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
                     Write-Host "Checking for namespace 'mernapp' using default context..."
                     
-                    $ns = kubectl get ns mernapp -o name --cache-dir=$CACHE_PATH 2>$null
-                    if (-not $ns) {
+                    $ns = kubectl get ns mernapp -o name --cache-dir=\$CACHE_PATH 2>\$null
+                    if (-not \$ns) {
                         Write-Host "Namespace mernapp not found, creating..."
-                        kubectl create ns mernapp --cache-dir=$CACHE_PATH
+                        kubectl create ns mernapp --cache-dir=\$CACHE_PATH
                     } else {
                         Write-Host "Namespace mernapp already exists."
                     }
                     
                     Write-Host "Checking for secret 'mongodb-cred' using default context..."
-                    kubectl -n mernapp get secret mongodb-cred --cache-dir=$CACHE_PATH
+                    kubectl -n mernapp get secret mongodb-cred --cache-dir=\$CACHE_PATH
                     Write-Host "Secret mongodb-cred found."
-                '''
+                """
             }
         }
 
         // --- UPDATED STAGE ---
         stage('Deploy Backend (Helm)'){
             steps {
-                powershell '''
+                // Use """ (triple-double quotes)
+                powershell """
                     $ErrorActionPreference = "Stop"
-                    # Corrected syntax: ${env.WORKSPACE} and \\
                     $CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
                     $ECR_BACKEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-backend"
                     Write-Host "Deploying backend helm chart using default context..."
-                    $chartPath = "$env:WORKSPACE\\K8s-helm\\backend"
+                    $chartPath = "\$env:WORKSPACE\\K8s-helm\\backend"
                     
-                    helm upgrade --install backend $chartPath -n mernapp `
+                    helm upgrade --install backend \$chartPath -n mernapp `
                         --set container.image="${ECR_BACKEND}:${env.IMAGE_TAG}" `
                         --set container.port=5000 `
                         --wait --timeout 300s
                         
                     Write-Host "Waiting for backend rollout..."
-                    kubectl -n mernapp rollout status deploy/mern-backend --timeout=300s --cache-dir=$CACHE_PATH
-                '''
+                    kubectl -n mernapp rollout status deploy/mern-backend --timeout=300s --cache-dir=\$CACHE_PATH
+                """
             }
         }
 
         // --- UPDATED STAGE ---
         stage('Deploy Frontend (Helm)'){
             steps {
-                powershell '''
+                // Use """ (triple-double quotes)
+                powershell """
                     $ErrorActionPreference = "Stop"
-                    # Corrected syntax: ${env.WORKSPACE} and \\
                     $CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
                     $ECR_FRONTEND = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com/mern-frontend"
                     Write-Host "Deploying frontend helm chart using default context..."
-                    $chartPath = "$env:WORKSPACE\\K8s-helm\\frontend"
+                    $chartPath = "\$env:WORKSPACE\\K8s-helm\\frontend"
                     
-                    helm upgrade --install frontend $chartPath -n mernapp `
+                    helm upgrade --install frontend \$chartPath -n mernapp `
                         --set container.image="${ECR_FRONTEND}:${env.IMAGE_TAG}" `
                         --set container.port=80 `
                         --wait --timeout 300s
                         
                     Write-Host "Waiting for frontend rollout..."
-                    kubectl -n mernapp rollout status deploy/frontend --timeout=300s --cache-dir=$CACHE_PATH
-                '''
+                    kubectl -n mernapp rollout status deploy/frontend --timeout=300s --cache-dir=\$CACHE_PATH
+                """
             }
         }
 
         // --- UPDATED STAGE ---
         stage('Deploy Ingress (Helm → nginx-mern)'){
             steps {
-                powershell '''
+                // Use """ (triple-double quotes)
+                powershell """
                     $ErrorActionPreference = "Stop"
-                    # Corrected syntax: ${env.WORKSPACE} and \\
                     $CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
                     Write-Host "Deploying ingress helm chart using default context..."
-                    $chartPath = "$env:WORKSPACE\\K8s-helm\\ingress"
+                    $chartPath = "\$env:WORKSPACE\\K8s-helm\\ingress"
 
-                    helm upgrade --install ingress $chartPath -n mernapp --wait --timeout 300s
-                    kubectl -n mernapp get ing --cache-dir=$CACHE_PATH
-                '''
+                    helm upgrade --install ingress \$chartPath -n mernapp --wait --timeout 300s
+                    kubectl -n mernapp get ing --cache-dir=\$CACHE_PATH
+                """
             }
         }
 
         // --- UPDATED STAGE ---
         stage('Cluster Check'){
             steps {
-                powershell '''
+                // Use """ (triple-double quotes)
+                powershell """
                     $ErrorActionPreference = "Stop"
-                    # Corrected syntax: ${env.WORKSPACE} and \\
                     $CACHE_PATH = "${env.WORKSPACE}\\.kube-cache"
                     Write-Host "Final cluster check (default context):"
                     
-                    kubectl -n mernapp get pods,svc,ing -o wide --cache-dir=$CACHE_PATH
-                '''
+                    kubectl -n mernapp get pods,svc,ing -o wide --cache-dir=\$CACHE_PATH
+                """
             }
         }
     }
 
     post { 
         always { 
-            powershell 'docker image prune -f' 
+            // Simple commands can use single-quotes
+            powershell 'docker image prune -f'
+            
+            // This will now work because env.KUBECONFIG is set correctly
             powershell 'Remove-Item -Path $env:KUBECONFIG -ErrorAction SilentlyContinue' 
-            // --- UPDATED POST ---
-            // Corrected syntax: ${env.WORKSPACE} and \\
-            powershell '''
+            
+            // Use """ to interpolate ${env.WORKSPACE}
+            powershell """
                 Remove-Item -Path "${env.WORKSPACE}\\.kube-cache" -Recurse -Force -ErrorAction SilentlyContinue
-            '''
+                Remove-Item -Path "${env.WORKSPACE}\\env.properties" -ErrorAction SilentlyContinue
+            """
         } 
     }
 }
