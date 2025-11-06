@@ -7,7 +7,6 @@ pipeline {
     ECR_BACKEND    = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-backend"
     ECR_FRONTEND   = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/mern-frontend"
     // IMAGE_TAG is now set in the 'Checkout' stage
-    // WORKDIR variable is removed as it was incorrect
   }
 
   options { disableConcurrentBuilds(); timestamps() }
@@ -17,7 +16,6 @@ pipeline {
       steps { 
         checkout scm 
         script {
-          // *** FIX ***
           // Set IMAGE_TAG *after* checkout so env.GIT_COMMIT exists
           env.IMAGE_TAG = env.GIT_COMMIT.take(7)
           echo "IMAGE_TAG=${env.IMAGE_TAG}"
@@ -51,7 +49,7 @@ pipeline {
           aws ecr get-login-password --region $env:AWS_REGION |
             docker login --username AWS --password-stdin $env:AWS_ACCOUNT_ID.dkr.ecr.$env:AWS_REGION.amazonaws.com
 
-          # *** FIX *** # Re-adding the correct PowerShell "try/create" logic
+          # Correct PowerShell "try/create" logic
           aws ecr describe-repositories --repository-names mern-backend --region $env:AWS_REGION 2>$null
           if ($LASTEXITCODE -ne 0) {
             Write-Host "Repository 'mern-backend' not found, creating it..."
@@ -72,20 +70,19 @@ pipeline {
         powershell '''
           # --- PATHING FIX ---
 
-          # 1. Change to the backend directory.
           Write-Host "Building backend in $env:WORKSPACE\\API-jokes"
           Set-Location "$env:WORKSPACE\\API-jokes"
           
-          # 2. Build using Dockerfile.prod in THIS directory ('.')
+          # *** FIX *** # Build path is '.' (current directory), not '.\API-jokes'
           docker build -t $env:ECR_BACKEND:$env:IMAGE_TAG -t $env:ECR_BACKEND:latest -f Dockerfile.prod .
           docker push $env:ECR_BACKEND:$env:IMAGE_TAG
           docker push $env:ECR_BACKEND:latest
 
-          # 3. Change to the frontend directory
           Write-Host "Building frontend in $env:WORKSPACE\\react-client"
           Set-Location "$env:WORKSPACE\\react-client"
 
-          # 4. Build using Dockerfile.prod in THIS directory ('.')
+          # *** FIX ***
+          # Build path is '.' (current directory), not '.\react-client'
           docker build -t $env:ECR_FRONTEND:$env:IMAGE_TAG -t $env:ECR_FRONTEND:latest -f Dockerfile.prod .
           docker push $env:ECR_FRONTEND:$env:IMAGE_TAG
           docker push $env:ECR_FRONTEND:latest
@@ -168,9 +165,11 @@ pipeline {
 
   post { 
     always { 
-      powershell '''docker image prune -f''' 
-
-      powershell 'Remove-Item -Path "$env:WORKSPACE\\kubeconfig" -ErrorAction SilentlyContinue'
+      powershell 'docker image prune -f' 
+      
+      // Groovy comments use '//', not '#'
+      // Clean up the kubeconfig file from the workspace
+      powershell 'Remove-Item -Path "$env:WORKSPACE\\kubeconfig" -ErrorAction SilentlyContinue' 
     } 
   }
 }
